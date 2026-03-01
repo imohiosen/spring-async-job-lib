@@ -30,8 +30,10 @@ public class JdbcTaskRepository implements TaskRepository {
         String sql = """
                 INSERT INTO job_tasks (id, job_id, task_type, destination, status,
                     created_at, updated_at, deadline_at, stale,
-                    attempt_count, base_interval_ms, multiplier, max_delay_ms, payload)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb)
+                    attempt_count, base_interval_ms, multiplier, max_delay_ms, payload,
+                    time_critical, tc_max_attempts, tc_base_interval_ms, tc_multiplier,
+                    tc_max_delay_ms, tc_db_sync_interval_ms)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?, ?, ?, ?, ?)
                 """;
         try (Connection conn = dataSource.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
@@ -49,6 +51,20 @@ public class JdbcTaskRepository implements TaskRepository {
             ps.setDouble(12, task.multiplier());
             ps.setLong(13, task.maxDelayMs());
             ps.setString(14, task.payload());
+            ps.setBoolean(15, task.timeCritical());
+            if (task.timeCritical()) {
+                ps.setInt(16, task.tcMaxAttempts());
+                ps.setLong(17, task.tcBaseIntervalMs());
+                ps.setDouble(18, task.tcMultiplier());
+                ps.setLong(19, task.tcMaxDelayMs());
+                ps.setLong(20, task.tcDbSyncIntervalMs());
+            } else {
+                ps.setNull(16, Types.INTEGER);
+                ps.setNull(17, Types.BIGINT);
+                ps.setNull(18, Types.NUMERIC);
+                ps.setNull(19, Types.BIGINT);
+                ps.setNull(20, Types.BIGINT);
+            }
             ps.executeUpdate();
         } catch (SQLException e) {
             throw new RuntimeException("Failed to insert task " + task.id(), e);
@@ -260,6 +276,32 @@ public class JdbcTaskRepository implements TaskRepository {
         }
     }
 
+    @Override
+    public boolean persistTimeCriticalProgress(UUID taskId, int attemptCount,
+                                                OffsetDateTime lastAttemptTime,
+                                                String lastErrorMessage, String lastErrorClass,
+                                                long fenceToken) {
+        String sql = """
+                UPDATE job_tasks
+                SET attempt_count = ?, last_attempt_time = ?,
+                    last_error_message = ?, last_error_class = ?,
+                    updated_at = NOW()
+                WHERE id = ? AND fence_token = ?
+                """;
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, attemptCount);
+            ps.setTimestamp(2, toTimestamp(lastAttemptTime));
+            ps.setString(3, lastErrorMessage);
+            ps.setString(4, lastErrorClass);
+            ps.setString(5, taskId.toString());
+            ps.setLong(6, fenceToken);
+            return ps.executeUpdate() > 0;
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to persist time-critical progress for task " + taskId, e);
+        }
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     private Optional<JobTask> querySingle(String sql, UUID taskId) {
@@ -320,7 +362,13 @@ public class JdbcTaskRepository implements TaskRepository {
                 rs.getString("last_error_class"),
                 (Long) rs.getObject("fence_token"),
                 rs.getString("payload"),
-                rs.getString("result")
+                rs.getString("result"),
+                rs.getBoolean("time_critical"),
+                rs.getObject("tc_max_attempts") != null ? rs.getInt("tc_max_attempts") : 0,
+                rs.getObject("tc_base_interval_ms") != null ? rs.getLong("tc_base_interval_ms") : 0L,
+                rs.getObject("tc_multiplier") != null ? rs.getDouble("tc_multiplier") : 1.0,
+                rs.getObject("tc_max_delay_ms") != null ? rs.getLong("tc_max_delay_ms") : 0L,
+                rs.getObject("tc_db_sync_interval_ms") != null ? rs.getLong("tc_db_sync_interval_ms") : 0L
         );
     }
 

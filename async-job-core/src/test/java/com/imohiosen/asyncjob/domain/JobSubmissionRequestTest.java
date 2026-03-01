@@ -15,7 +15,7 @@ class JobSubmissionRequestTest {
     void blankTaskType_throwsException() {
         assertThatThrownBy(() -> new JobSubmissionRequest(
                 "test-job", "test-topic", " ",
-                List.of(), 60_000L, null, null, null, null, null))
+                List.of(), 60_000L, null, null, null, null, null, false, null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("taskType");
     }
@@ -24,7 +24,7 @@ class JobSubmissionRequestTest {
     void nullTaskType_throwsException() {
         assertThatThrownBy(() -> new JobSubmissionRequest(
                 "test-job", "test-topic", null,
-                List.of(), 60_000L, null, null, null, null, null))
+                List.of(), 60_000L, null, null, null, null, null, false, null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("taskType");
     }
@@ -33,7 +33,7 @@ class JobSubmissionRequestTest {
     void negativeDeadlineMs_throwsException() {
         assertThatThrownBy(() -> new JobSubmissionRequest(
                 "test-job", "test-topic", "TEST_TYPE",
-                List.of(), -1L, null, null, null, null, null))
+                List.of(), -1L, null, null, null, null, null, false, null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("deadlineMs");
     }
@@ -42,7 +42,7 @@ class JobSubmissionRequestTest {
     void nullJobName_throwsException() {
         assertThatThrownBy(() -> new JobSubmissionRequest(
                 null, "test-topic", "TEST_TYPE",
-                List.of(), 60_000L, null, null, null, null, null))
+                List.of(), 60_000L, null, null, null, null, null, false, null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("jobName");
     }
@@ -51,7 +51,7 @@ class JobSubmissionRequestTest {
     void nullDestination_throwsException() {
         assertThatThrownBy(() -> new JobSubmissionRequest(
                 "test-job", null, "TEST_TYPE",
-                List.of(), 60_000L, null, null, null, null, null))
+                List.of(), 60_000L, null, null, null, null, null, false, null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("destination");
     }
@@ -61,7 +61,7 @@ class JobSubmissionRequestTest {
         JobSubmissionRequest request = new JobSubmissionRequest(
                 "test-job", "test-topic", "TEST_TYPE",
                 List.of(), 60_000L, null, null,
-                OffsetDateTime.now().minusHours(2), null, null);
+                OffsetDateTime.now().minusHours(2), null, null, false, null);
         assertThat(request.isImmediate()).isTrue();
     }
 
@@ -70,7 +70,7 @@ class JobSubmissionRequestTest {
         List<String> mutable = new ArrayList<>(List.of("a", "b", "c"));
         JobSubmissionRequest request = new JobSubmissionRequest(
                 "test-job", "test-topic", "TEST_TYPE",
-                mutable, 60_000L, null, null, null, null, null);
+                mutable, 60_000L, null, null, null, null, null, false, null);
 
         mutable.add("d");
 
@@ -82,7 +82,7 @@ class JobSubmissionRequestTest {
     void payloads_returnedListIsUnmodifiable() {
         JobSubmissionRequest request = new JobSubmissionRequest(
                 "test-job", "test-topic", "TEST_TYPE",
-                List.of("a"), 60_000L, null, null, null, null, null);
+                List.of("a"), 60_000L, null, null, null, null, null, false, null);
 
         assertThatThrownBy(() -> request.payloads().add("b"))
                 .isInstanceOf(UnsupportedOperationException.class);
@@ -93,7 +93,7 @@ class JobSubmissionRequestTest {
         BackoffPolicy custom = new BackoffPolicy(5_000L, 3.0, 300_000L);
         JobSubmissionRequest request = new JobSubmissionRequest(
                 "test-job", "test-topic", "TEST_TYPE",
-                List.of(), 60_000L, null, custom, null, null, null);
+                List.of(), 60_000L, null, custom, null, null, null, false, null);
         assertThat(request.effectiveBackoffPolicy()).isSameAs(custom);
     }
 
@@ -101,7 +101,7 @@ class JobSubmissionRequestTest {
     void effectiveTaskDeadlineMs_withCustomValue_returnsCustom() {
         JobSubmissionRequest request = new JobSubmissionRequest(
                 "test-job", "test-topic", "TEST_TYPE",
-                List.of(), 60_000L, 15_000L, null, null, null, null);
+                List.of(), 60_000L, 15_000L, null, null, null, null, false, null);
         assertThat(request.effectiveTaskDeadlineMs()).isEqualTo(15_000L);
     }
 }

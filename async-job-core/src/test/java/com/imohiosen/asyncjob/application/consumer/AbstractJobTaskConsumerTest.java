@@ -230,7 +230,8 @@ class AbstractJobTaskConsumerTest {
                 now.plusHours(1), false,
                 attemptCount, null, null,
                 1_000L, 2.0, 3_600_000L,
-                null, null, null, null, null, "{}", null
+                null, null, null, null, null, "{}", null,
+                false, 0, 0L, 1.0, 0L, 0L
         );
     }
 

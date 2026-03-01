@@ -136,6 +136,8 @@ public abstract class AbstractJobScheduler {
                 backoffPolicy(),
                 getScheduledAt(),
                 null,
+                null,
+                false,
                 null
         );
 

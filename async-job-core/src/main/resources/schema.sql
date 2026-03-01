@@ -27,7 +27,8 @@ CREATE TABLE jobs (
     completed_tasks     INT             NOT NULL DEFAULT 0,
     failed_tasks        INT             NOT NULL DEFAULT 0,
     dead_letter_tasks   INT             NOT NULL DEFAULT 0,
-    metadata            JSONB
+    metadata            JSONB,
+    time_critical       BOOLEAN         NOT NULL DEFAULT FALSE
 );
 
 -- ---------------------------------------------------------------------------
@@ -60,7 +61,13 @@ CREATE TABLE job_tasks (
     fence_token         BIGINT,
     payload             JSONB           NOT NULL,
     result              JSONB,
-    metadata            JSONB
+    metadata            JSONB,
+    time_critical       BOOLEAN         NOT NULL DEFAULT FALSE,
+    tc_max_attempts     INT,
+    tc_base_interval_ms BIGINT,
+    tc_multiplier       NUMERIC(10, 4),
+    tc_max_delay_ms     BIGINT,
+    tc_db_sync_interval_ms BIGINT
 );
 
 -- ---------------------------------------------------------------------------

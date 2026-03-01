@@ -41,6 +41,21 @@ public interface TaskRepository {
                            String errorMessage, String errorClass, long fenceToken);
 
     /**
+     * Persists in-flight progress for a time-critical task during its Resilience4j
+     * retry loop. The task status remains {@code IN_PROGRESS} — only the attempt
+     * count and error are updated. This is called periodically (every
+     * {@code dbSyncIntervalMs}) to avoid DB overload during sub-second retries.
+     *
+     * <p>Uses the fenced-token guard: {@code WHERE id = ? AND fence_token = ?}.
+     *
+     * @return {@code false} if the fence token is stale (another node took over)
+     */
+    boolean persistTimeCriticalProgress(UUID taskId, int attemptCount,
+                                        OffsetDateTime lastAttemptTime,
+                                        String lastErrorMessage, String lastErrorClass,
+                                        long fenceToken);
+
+    /**
      * Flags all IN_PROGRESS tasks that have breached their deadline as stale.
      *
      * @return number of tasks flagged stale

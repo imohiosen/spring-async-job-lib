@@ -112,6 +112,22 @@ public abstract class AbstractJobTaskConsumer {
         return task.backoffPolicy();
     }
 
+    /**
+     * Submits time-critical work using Resilience4j in-memory retries.
+     * Override in subclasses (e.g. {@link DispatchingJobTaskConsumer}) to
+     * delegate to a {@link TimeCriticalResilienceExecutor}.
+     *
+     * <p>Default implementation falls back to the normal {@link #submitWork(JobTask)}
+     * path — subclasses must override this to enable the time-critical path.
+     *
+     * @param task       the time-critical task
+     * @param fenceToken the fenced lock token held by this consumer
+     * @return a future that resolves to the task result
+     */
+    protected CompletableFuture<TaskResult> submitTimeCriticalWork(JobTask task, long fenceToken) {
+        return submitWork(task);
+    }
+
     // ── Transport-agnostic entry point ────────────────────────────────────────
 
     /**
@@ -157,9 +173,12 @@ public abstract class AbstractJobTaskConsumer {
 
             // 4. Submit to executor (shared pool or per-handler); record asyncSubmittedAt
             OffsetDateTime submittedAt = OffsetDateTime.now();
-            CompletableFuture<TaskResult> future = submitWork(task);
+            CompletableFuture<TaskResult> future = task.timeCritical()
+                    ? submitTimeCriticalWork(task, fenceToken)
+                    : submitWork(task);
             taskRepository.recordAsyncSubmitted(taskId, submittedAt, fenceToken);
-            log.debug("Task={} submitted to executor at {} (fence={})", taskId, submittedAt, fenceToken);
+            log.debug("Task={} submitted to executor at {} (fence={}, timeCritical={})",
+                    taskId, submittedAt, fenceToken, task.timeCritical());
 
             // 5. Wait indefinitely — lock watchdog keeps us safe; no forced timeout
             TaskResult result = future.get();

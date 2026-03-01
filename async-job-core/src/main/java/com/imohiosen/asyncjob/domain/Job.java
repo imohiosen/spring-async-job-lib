@@ -24,7 +24,8 @@ public record Job(
         int              completedTasks,
         int              failedTasks,
         int              deadLetterTasks,
-        String           metadata
+        String           metadata,
+        boolean          timeCritical
 ) {
     /** Returns true if all tasks have reached a terminal state. */
     public boolean isFinished() {

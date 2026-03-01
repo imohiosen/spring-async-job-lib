@@ -209,7 +209,8 @@ class AsyncJobIntegrationTest extends AbstractIntegrationTest {
                 null, // scheduledAt
                 false,
                 0, 0, 0, 0, 0, 0, // task counters (will be set by submission)
-                "{}"
+                "{}",
+                false
         );
     }
 
@@ -233,7 +234,7 @@ class AsyncJobIntegrationTest extends AbstractIntegrationTest {
                 null, null, null,
                 payload,
                 null,
-                "{}"
+                false, 0, 0L, 1.0, 0L, 0L
         );
     }
 }

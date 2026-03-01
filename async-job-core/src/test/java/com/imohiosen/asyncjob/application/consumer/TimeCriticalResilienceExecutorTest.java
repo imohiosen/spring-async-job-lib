@@ -1,0 +1,271 @@
+package com.imohiosen.asyncjob.application.consumer;
+
+import com.imohiosen.asyncjob.application.handler.JobTaskHandler;
+import com.imohiosen.asyncjob.domain.BackoffPolicy;
+import com.imohiosen.asyncjob.domain.JobTask;
+import com.imohiosen.asyncjob.domain.TaskResult;
+import com.imohiosen.asyncjob.domain.TaskStatus;
+import com.imohiosen.asyncjob.domain.TimeCriticalPolicy;
+import com.imohiosen.asyncjob.port.repository.TaskRepository;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.time.OffsetDateTime;
+import java.util.UUID;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.AdditionalMatchers.not;
+import static org.mockito.Mockito.*;
+
+@ExtendWith(MockitoExtension.class)
+class TimeCriticalResilienceExecutorTest {
+
+    @Mock TaskRepository taskRepository;
+
+    ScheduledExecutorService syncScheduler;
+    TimeCriticalResilienceExecutor executor;
+
+    UUID   taskId;
+    UUID   jobId;
+    long   fenceToken = 42L;
+
+    @BeforeEach
+    void setUp() {
+        syncScheduler = Executors.newSingleThreadScheduledExecutor();
+        executor = new TimeCriticalResilienceExecutor(taskRepository, syncScheduler);
+        taskId = UUID.randomUUID();
+        jobId  = UUID.randomUUID();
+    }
+
+    @Test
+    void execute_handlerSucceedsFirstAttempt_returnsResult_noDatabaseSyncs() {
+        JobTask task = buildTimeCriticalTask(taskId, jobId, 0);
+        JobTaskHandler handler = stubHandler(TaskResult.success("{\"ok\":true}"));
+
+        TaskResult result = executor.execute(task, fenceToken, handler);
+
+        assertThat(result.isSuccess()).isTrue();
+        assertThat(result.payload()).isEqualTo("{\"ok\":true}");
+        // No retries occurred → no DB sync needed
+        verify(taskRepository, never()).persistTimeCriticalProgress(
+                any(), anyInt(), any(), anyString(), anyString(), anyLong());
+    }
+
+    @Test
+    void execute_handlerFailsThenSucceeds_retriesAndReturnsResult() {
+        JobTask task = buildTimeCriticalTask(taskId, jobId, 0);
+        AtomicInteger callCount = new AtomicInteger(0);
+        JobTaskHandler handler = new JobTaskHandler() {
+            @Override public String taskType() { return "TEST"; }
+            @Override public TaskResult handle(JobTask t) {
+                if (callCount.getAndIncrement() < 2) {
+                    throw new RuntimeException("transient error");
+                }
+                return TaskResult.success("{\"retried\":true}");
+            }
+        };
+
+        TaskResult result = executor.execute(task, fenceToken, handler);
+
+        assertThat(result.isSuccess()).isTrue();
+        assertThat(result.payload()).isEqualTo("{\"retried\":true}");
+        assertThat(callCount.get()).isEqualTo(3); // 2 failures + 1 success
+    }
+
+    @Test
+    void execute_maxRetriesExceeded_throwsException() {
+        // Policy: 3 max attempts, so after 3 failures we should get an exception
+        TimeCriticalPolicy policy = new TimeCriticalPolicy(3, 10L, 1.0, 50L, 60_000L);
+        JobTask task = buildTimeCriticalTask(taskId, jobId, 0, policy);
+        JobTaskHandler handler = new JobTaskHandler() {
+            @Override public String taskType() { return "TEST"; }
+            @Override public TaskResult handle(JobTask t) {
+                throw new RuntimeException("always fails");
+            }
+        };
+
+        assertThatThrownBy(() -> executor.execute(task, fenceToken, handler))
+                .isInstanceOf(TimeCriticalRetriesExhaustedException.class)
+                .hasMessageContaining("always fails");
+    }
+
+    @Test
+    void execute_periodicSyncFires_callsPersistTimeCriticalProgress() throws Exception {
+        // Use a policy with very short DB sync interval to trigger sync during retries
+        TimeCriticalPolicy policy = new TimeCriticalPolicy(20, 50L, 1.0, 50L, 50L);
+        JobTask task = buildTimeCriticalTask(taskId, jobId, 0, policy);
+        AtomicInteger callCount = new AtomicInteger(0);
+        JobTaskHandler handler = new JobTaskHandler() {
+            @Override public String taskType() { return "TEST"; }
+            @Override public TaskResult handle(JobTask t) {
+                if (callCount.getAndIncrement() < 15) {
+                    throw new RuntimeException("keep failing");
+                }
+                return TaskResult.success("{\"ok\":true}");
+            }
+        };
+
+        when(taskRepository.persistTimeCriticalProgress(
+                eq(taskId), anyInt(), any(), anyString(), anyString(), eq(fenceToken)))
+                .thenReturn(true);
+
+        TaskResult result = executor.execute(task, fenceToken, handler);
+
+        assertThat(result.isSuccess()).isTrue();
+        // With 15 failures at 50ms each = 750ms, and DB sync every 50ms,
+        // we should have multiple syncs
+        verify(taskRepository, atLeastOnce()).persistTimeCriticalProgress(
+                eq(taskId), anyInt(), any(), anyString(), anyString(), eq(fenceToken));
+    }
+
+    @Test
+    void execute_syncUsesCurrentFenceToken() throws Exception {
+        // Short sync interval to trigger a sync
+        TimeCriticalPolicy policy = new TimeCriticalPolicy(10, 50L, 1.0, 50L, 30L);
+        JobTask task = buildTimeCriticalTask(taskId, jobId, 0, policy);
+        AtomicInteger callCount = new AtomicInteger(0);
+        JobTaskHandler handler = new JobTaskHandler() {
+            @Override public String taskType() { return "TEST"; }
+            @Override public TaskResult handle(JobTask t) {
+                if (callCount.getAndIncrement() < 5) {
+                    throw new RuntimeException("temp error");
+                }
+                return TaskResult.success("{}");
+            }
+        };
+
+        when(taskRepository.persistTimeCriticalProgress(
+                eq(taskId), anyInt(), any(), anyString(), anyString(), eq(99L)))
+                .thenReturn(true);
+
+        executor.execute(task, 99L, handler);
+
+        // All sync calls must use the same fence token
+        verify(taskRepository, atLeastOnce()).persistTimeCriticalProgress(
+                eq(taskId), anyInt(), any(), anyString(), anyString(), eq(99L));
+        verify(taskRepository, never()).persistTimeCriticalProgress(
+                any(), anyInt(), any(), anyString(), anyString(), not(eq(99L)));
+    }
+
+    @Test
+    void execute_staleTokenOnSync_continuesRetrying() throws Exception {
+        // Sync returns false (stale token) but executor should continue retrying
+        TimeCriticalPolicy policy = new TimeCriticalPolicy(10, 50L, 1.0, 50L, 30L);
+        JobTask task = buildTimeCriticalTask(taskId, jobId, 0, policy);
+        AtomicInteger callCount = new AtomicInteger(0);
+        JobTaskHandler handler = new JobTaskHandler() {
+            @Override public String taskType() { return "TEST"; }
+            @Override public TaskResult handle(JobTask t) {
+                if (callCount.getAndIncrement() < 5) {
+                    throw new RuntimeException("temp");
+                }
+                return TaskResult.success("{}");
+            }
+        };
+
+        // Sync returns false → stale token, but execution should continue
+        when(taskRepository.persistTimeCriticalProgress(
+                any(), anyInt(), any(), anyString(), anyString(), anyLong()))
+                .thenReturn(false);
+
+        TaskResult result = executor.execute(task, fenceToken, handler);
+
+        // Should still succeed despite stale sync
+        assertThat(result.isSuccess()).isTrue();
+    }
+
+    @Test
+    void execute_finalSyncCalledOnExhaustion_beforeRethrow() {
+        TimeCriticalPolicy policy = new TimeCriticalPolicy(3, 10L, 1.0, 50L, 60_000L);
+        JobTask task = buildTimeCriticalTask(taskId, jobId, 0, policy);
+        JobTaskHandler handler = new JobTaskHandler() {
+            @Override public String taskType() { return "TEST"; }
+            @Override public TaskResult handle(JobTask t) {
+                throw new RuntimeException("persistent failure");
+            }
+        };
+
+        when(taskRepository.persistTimeCriticalProgress(
+                eq(taskId), anyInt(), any(), anyString(), anyString(), eq(fenceToken)))
+                .thenReturn(true);
+
+        assertThatThrownBy(() -> executor.execute(task, fenceToken, handler))
+                .isInstanceOf(TimeCriticalRetriesExhaustedException.class);
+
+        // Final sync should have been called with the last attempt count
+        verify(taskRepository, atLeastOnce()).persistTimeCriticalProgress(
+                eq(taskId), anyInt(), any(), eq("persistent failure"),
+                eq("java.lang.RuntimeException"), eq(fenceToken));
+    }
+
+    @Test
+    void execute_handlerSucceeds_noFinalSyncNeeded() {
+        JobTask task = buildTimeCriticalTask(taskId, jobId, 0);
+        JobTaskHandler handler = stubHandler(TaskResult.success("{}"));
+
+        executor.execute(task, fenceToken, handler);
+
+        verify(taskRepository, never()).persistTimeCriticalProgress(
+                any(), anyInt(), any(), anyString(), anyString(), anyLong());
+    }
+
+    @Test
+    void execute_handlerReturnsTaskResultFailure_treatedAsException() {
+        TimeCriticalPolicy policy = new TimeCriticalPolicy(2, 10L, 1.0, 50L, 60_000L);
+        JobTask task = buildTimeCriticalTask(taskId, jobId, 0, policy);
+        JobTaskHandler handler = new JobTaskHandler() {
+            @Override public String taskType() { return "TEST"; }
+            @Override public TaskResult handle(JobTask t) {
+                return TaskResult.failure(new RuntimeException("soft failure"));
+            }
+        };
+
+        when(taskRepository.persistTimeCriticalProgress(
+                any(), anyInt(), any(), anyString(), anyString(), anyLong()))
+                .thenReturn(true);
+
+        assertThatThrownBy(() -> executor.execute(task, fenceToken, handler))
+                .isInstanceOf(TimeCriticalRetriesExhaustedException.class);
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private JobTask buildTimeCriticalTask(UUID taskId, UUID jobId, int attemptCount) {
+        return buildTimeCriticalTask(taskId, jobId, attemptCount, TimeCriticalPolicy.DEFAULT);
+    }
+
+    private JobTask buildTimeCriticalTask(UUID taskId, UUID jobId, int attemptCount,
+                                          TimeCriticalPolicy tcPolicy) {
+        OffsetDateTime now = OffsetDateTime.now();
+        return new JobTask(
+                taskId, jobId, "TEST", "test-topic",
+                null, null, TaskStatus.PENDING,
+                now, now, null, null,
+                now.plusHours(1), false,
+                attemptCount, null, null,
+                1_000L, 2.0, 3_600_000L,
+                null, null, null, null, null, "{}", null,
+                true, tcPolicy.maxAttempts(), tcPolicy.baseIntervalMs(),
+                tcPolicy.multiplier(), tcPolicy.maxDelayMs(), tcPolicy.dbSyncIntervalMs()
+        );
+    }
+
+    private static JobTaskHandler stubHandler(TaskResult result) {
+        return new JobTaskHandler() {
+            @Override public String taskType() { return "TEST"; }
+            @Override public TaskResult handle(JobTask task) { return result; }
+        };
+    }
+}

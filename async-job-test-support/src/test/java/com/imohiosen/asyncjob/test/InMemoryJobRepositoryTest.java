@@ -199,13 +199,13 @@ class InMemoryJobRepositoryTest {
         OffsetDateTime now = OffsetDateTime.now();
         return new Job(id, "test-job", null, status,
                 now, now, null, null, now.plusHours(1), null,
-                false, 2, 2, 0, 0, 0, 0, null);
+                false, 2, 2, 0, 0, 0, 0, null, false);
     }
 
     private static Job scheduledJob(UUID id, OffsetDateTime scheduledAt) {
         OffsetDateTime now = OffsetDateTime.now();
         return new Job(id, "scheduled-job", null, JobStatus.SCHEDULED,
                 now, now, null, null, now.plusHours(1), scheduledAt,
-                false, 2, 2, 0, 0, 0, 0, null);
+                false, 2, 2, 0, 0, 0, 0, null, false);
     }
 }

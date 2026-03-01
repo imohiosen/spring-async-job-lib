@@ -70,7 +70,8 @@ public class JobController {
                     request.tasks().size(),
                     request.tasks().size(),
                     0, 0, 0, 0,
-                    request.metadata()
+                    request.metadata(),
+                    false
             );
 
             // Create tasks
@@ -95,7 +96,7 @@ public class JobController {
                             null, null, null,
                             taskReq.payload(),
                             null,
-                            taskReq.metadata()
+                            false, 0, 0L, 1.0, 0L, 0L
                     ))
                     .collect(Collectors.toList());
 

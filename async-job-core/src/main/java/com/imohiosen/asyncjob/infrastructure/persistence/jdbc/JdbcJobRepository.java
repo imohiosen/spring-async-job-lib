@@ -30,8 +30,9 @@ public class JdbcJobRepository implements JobRepository {
         String sql = """
                 INSERT INTO jobs (id, job_name, correlation_id, status, created_at, updated_at,
                                   deadline_at, scheduled_at, stale, total_tasks, pending_tasks,
-                                  in_progress_tasks, completed_tasks, failed_tasks, dead_letter_tasks, metadata)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb)
+                                  in_progress_tasks, completed_tasks, failed_tasks, dead_letter_tasks, metadata,
+                                  time_critical)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?)
                 """;
         try (Connection conn = dataSource.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
@@ -51,6 +52,7 @@ public class JdbcJobRepository implements JobRepository {
             ps.setInt(14, job.failedTasks());
             ps.setInt(15, job.deadLetterTasks());
             ps.setString(16, job.metadata());
+            ps.setBoolean(17, job.timeCritical());
             ps.executeUpdate();
         } catch (SQLException e) {
             throw new RuntimeException("Failed to insert job " + job.id(), e);
@@ -204,7 +206,8 @@ public class JdbcJobRepository implements JobRepository {
                 rs.getInt("completed_tasks"),
                 rs.getInt("failed_tasks"),
                 rs.getInt("dead_letter_tasks"),
-                rs.getString("metadata")
+                rs.getString("metadata"),
+                rs.getBoolean("time_critical")
         );
     }
 

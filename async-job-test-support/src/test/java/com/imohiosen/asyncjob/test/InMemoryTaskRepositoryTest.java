@@ -382,7 +382,8 @@ class InMemoryTaskRepositoryTest {
                 1000L, 2.0, 3_600_000L,
                 null, null,
                 null, null,
-                null, "{\"data\":1}", null
+                null, "{\"data\":1}", null,
+                false, 0, 0L, 1.0, 0L, 0L
         );
     }
 
@@ -397,7 +398,8 @@ class InMemoryTaskRepositoryTest {
                 1000L, 2.0, 3_600_000L,
                 null, null,
                 null, null,
-                null, "{\"data\":1}", null
+                null, "{\"data\":1}", null,
+                false, 0, 0L, 1.0, 0L, 0L
         );
     }
 
@@ -412,7 +414,8 @@ class InMemoryTaskRepositoryTest {
                 1000L, 2.0, 3_600_000L,
                 null, null,
                 "error", "RuntimeException",
-                null, "{\"data\":1}", null
+                null, "{\"data\":1}", null,
+                false, 0, 0L, 1.0, 0L, 0L
         );
     }
 
@@ -428,7 +431,8 @@ class InMemoryTaskRepositoryTest {
                 1000L, 2.0, 3_600_000L,
                 null, null,
                 "error", "RuntimeException",
-                null, "{\"data\":1}", null
+                null, "{\"data\":1}", null,
+                false, 0, 0L, 1.0, 0L, 0L
         );
     }
 }

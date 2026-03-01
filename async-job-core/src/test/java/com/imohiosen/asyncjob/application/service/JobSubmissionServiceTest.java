@@ -48,7 +48,7 @@ class JobSubmissionServiceTest {
         JobSubmissionRequest request = new JobSubmissionRequest(
                 "test-job", "test-topic", "TEST_TYPE",
                 List.of("{\"id\":1}", "{\"id\":2}"),
-                60_000L, null, null, null, null, null);
+                60_000L, null, null, null, null, null, false, null);
 
         UUID jobId = service.submit(request);
 
@@ -67,7 +67,7 @@ class JobSubmissionServiceTest {
         JobSubmissionRequest request = new JobSubmissionRequest(
                 "test-job", "test-topic", "TEST_TYPE",
                 List.of("{\"a\":1}", "{\"b\":2}", "{\"c\":3}"),
-                60_000L, null, null, null, null, null);
+                60_000L, null, null, null, null, null, false, null);
 
         service.submit(request);
 
@@ -79,7 +79,7 @@ class JobSubmissionServiceTest {
         JobSubmissionRequest request = new JobSubmissionRequest(
                 "test-job", "test-topic", "TEST_TYPE",
                 List.of("{\"a\":1}", "{\"b\":2}"),
-                60_000L, null, null, null, null, null);
+                60_000L, null, null, null, null, null, false, null);
 
         UUID jobId = service.submit(request);
 
@@ -97,7 +97,7 @@ class JobSubmissionServiceTest {
         JobSubmissionRequest request = new JobSubmissionRequest(
                 "test-job", "test-topic", "TEST_TYPE",
                 List.of("{\"x\":1}"),
-                60_000L, null, null, null, null, null);
+                60_000L, null, null, null, null, null, false, null);
 
         UUID jobId = service.submit(request);
 
@@ -111,7 +111,7 @@ class JobSubmissionServiceTest {
         JobSubmissionRequest request = new JobSubmissionRequest(
                 "test-job", "test-topic", "TEST_TYPE",
                 List.of("{\"x\":1}"),
-                60_000L, null, null, past, null, null);
+                60_000L, null, null, past, null, null, false, null);
 
         UUID jobId = service.submit(request);
 
@@ -125,7 +125,7 @@ class JobSubmissionServiceTest {
         JobSubmissionRequest request = new JobSubmissionRequest(
                 "test-job", "test-topic", "TEST_TYPE",
                 List.of(),
-                60_000L, null, null, null, null, null);
+                60_000L, null, null, null, null, null, false, null);
 
         UUID jobId = service.submit(request);
 
@@ -140,7 +140,7 @@ class JobSubmissionServiceTest {
         JobSubmissionRequest request = new JobSubmissionRequest(
                 "test-job", "test-topic", "TEST_TYPE",
                 List.of("{\"x\":1}"),
-                60_000L, null, custom, null, null, null);
+                60_000L, null, custom, null, null, null, false, null);
 
         service.submit(request);
 
@@ -158,7 +158,7 @@ class JobSubmissionServiceTest {
         JobSubmissionRequest request = new JobSubmissionRequest(
                 "test-job", "test-topic", "TEST_TYPE",
                 List.of("{\"x\":1}"),
-                60_000L, null, null, null, "corr-123", "{\"source\":\"api\"}");
+                60_000L, null, null, null, "corr-123", "{\"source\":\"api\"}", false, null);
 
         service.submit(request);
 
@@ -175,7 +175,7 @@ class JobSubmissionServiceTest {
         JobSubmissionRequest request = new JobSubmissionRequest(
                 "test-job", "test-topic", "TEST_TYPE",
                 List.of("{\"x\":1}"),
-                120_000L, null, null, null, null, null);
+                120_000L, null, null, null, null, null, false, null);
 
         OffsetDateTime before = OffsetDateTime.now();
         service.submit(request);
@@ -197,7 +197,7 @@ class JobSubmissionServiceTest {
         JobSubmissionRequest request = new JobSubmissionRequest(
                 "deferred-job", "test-topic", "TEST_TYPE",
                 List.of("{\"id\":1}"),
-                60_000L, null, null, future, null, null);
+                60_000L, null, null, future, null, null, false, null);
 
         UUID jobId = service.submit(request);
 
@@ -215,7 +215,7 @@ class JobSubmissionServiceTest {
         JobSubmissionRequest request = new JobSubmissionRequest(
                 "deferred-job", "test-topic", "TEST_TYPE",
                 List.of("{\"id\":1}", "{\"id\":2}"),
-                60_000L, null, null, future, null, null);
+                60_000L, null, null, future, null, null, false, null);
 
         service.submit(request);
 
@@ -229,7 +229,7 @@ class JobSubmissionServiceTest {
         JobSubmissionRequest request = new JobSubmissionRequest(
                 "deferred-job", "test-topic", "TEST_TYPE",
                 List.of("{\"id\":1}"),
-                60_000L, null, null, future, null, null);
+                60_000L, null, null, future, null, null, false, null);
 
         UUID jobId = service.submit(request);
 
@@ -245,16 +245,16 @@ class JobSubmissionServiceTest {
         UUID jobId = UUID.randomUUID();
         Job job = new Job(jobId, "test-job", null, JobStatus.SCHEDULED,
                 now, now, null, null, now.plusHours(1), now.minusMinutes(1),
-                false, 2, 2, 0, 0, 0, 0, null);
+                false, 2, 2, 0, 0, 0, 0, null, false);
 
         JobTask task1 = new JobTask(UUID.randomUUID(), jobId, "T", "topic",
                 null, null, TaskStatus.PENDING, now, now, null, null,
                 now.plusHours(1), false, 0, null, null,
-                1000L, 2.0, 3600000L, null, null, null, null, null, "{\"x\":1}", null);
+                1000L, 2.0, 3600000L, null, null, null, null, null, "{\"x\":1}", null, false, 0, 0L, 1.0, 0L, 0L);
         JobTask task2 = new JobTask(UUID.randomUUID(), jobId, "T", "topic",
                 null, null, TaskStatus.PENDING, now, now, null, null,
                 now.plusHours(1), false, 0, null, null,
-                1000L, 2.0, 3600000L, null, null, null, null, null, "{\"x\":2}", null);
+                1000L, 2.0, 3600000L, null, null, null, null, null, "{\"x\":2}", null, false, 0, 0L, 1.0, 0L, 0L);
 
         when(taskRepository.findTasksByJobId(jobId)).thenReturn(List.of(task1, task2));
 
@@ -271,13 +271,13 @@ class JobSubmissionServiceTest {
         UUID jobId = UUID.randomUUID();
         Job job = new Job(jobId, "test-job", null, JobStatus.SCHEDULED,
                 now, now, null, null, now.plusHours(1), now.minusMinutes(1),
-                false, 1, 0, 0, 0, 0, 0, null);
+                false, 1, 0, 0, 0, 0, 0, null, false);
 
         // A completed task should be skipped
         JobTask completedTask = new JobTask(UUID.randomUUID(), jobId, "T", "topic",
                 null, null, TaskStatus.COMPLETED, now, now, now, now,
                 now.plusHours(1), false, 1, null, null,
-                1000L, 2.0, 3600000L, null, null, null, null, null, "{\"x\":1}", "ok");
+                1000L, 2.0, 3600000L, null, null, null, null, null, "{\"x\":1}", "ok", false, 0, 0L, 1.0, 0L, 0L);
 
         when(taskRepository.findTasksByJobId(jobId)).thenReturn(List.of(completedTask));
 
@@ -294,7 +294,7 @@ class JobSubmissionServiceTest {
     void request_nullPayloads_throwsException() {
         assertThatThrownBy(() -> new JobSubmissionRequest(
                 "test-job", "test-topic", "TEST_TYPE",
-                null, 60_000L, null, null, null, null, null))
+                null, 60_000L, null, null, null, null, null, false, null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("payloads");
     }
@@ -303,7 +303,7 @@ class JobSubmissionServiceTest {
     void request_blankJobName_throwsException() {
         assertThatThrownBy(() -> new JobSubmissionRequest(
                 "", "test-topic", "TEST_TYPE",
-                List.of(), 60_000L, null, null, null, null, null))
+                List.of(), 60_000L, null, null, null, null, null, false, null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("jobName");
     }
@@ -312,7 +312,7 @@ class JobSubmissionServiceTest {
     void request_blankDestination_throwsException() {
         assertThatThrownBy(() -> new JobSubmissionRequest(
                 "test-job", "", "TEST_TYPE",
-                List.of(), 60_000L, null, null, null, null, null))
+                List.of(), 60_000L, null, null, null, null, null, false, null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("destination");
     }
@@ -321,7 +321,7 @@ class JobSubmissionServiceTest {
     void request_zeroDeadline_throwsException() {
         assertThatThrownBy(() -> new JobSubmissionRequest(
                 "test-job", "test-topic", "TEST_TYPE",
-                List.of(), 0L, null, null, null, null, null))
+                List.of(), 0L, null, null, null, null, null, false, null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("deadlineMs");
     }
@@ -330,7 +330,7 @@ class JobSubmissionServiceTest {
     void request_effectiveTaskDeadlineMs_defaultsToDeadlineMs() {
         JobSubmissionRequest request = new JobSubmissionRequest(
                 "test-job", "test-topic", "TEST_TYPE",
-                List.of(), 60_000L, null, null, null, null, null);
+                List.of(), 60_000L, null, null, null, null, null, false, null);
         assertThat(request.effectiveTaskDeadlineMs()).isEqualTo(60_000L);
     }
 
@@ -338,7 +338,7 @@ class JobSubmissionServiceTest {
     void request_effectiveTaskDeadlineMs_usesCustomValue() {
         JobSubmissionRequest request = new JobSubmissionRequest(
                 "test-job", "test-topic", "TEST_TYPE",
-                List.of(), 60_000L, 30_000L, null, null, null, null);
+                List.of(), 60_000L, 30_000L, null, null, null, null, false, null);
         assertThat(request.effectiveTaskDeadlineMs()).isEqualTo(30_000L);
     }
 
@@ -346,7 +346,7 @@ class JobSubmissionServiceTest {
     void request_effectiveBackoffPolicy_defaultsToDefault() {
         JobSubmissionRequest request = new JobSubmissionRequest(
                 "test-job", "test-topic", "TEST_TYPE",
-                List.of(), 60_000L, null, null, null, null, null);
+                List.of(), 60_000L, null, null, null, null, null, false, null);
         assertThat(request.effectiveBackoffPolicy()).isEqualTo(BackoffPolicy.DEFAULT);
     }
 
@@ -354,7 +354,7 @@ class JobSubmissionServiceTest {
     void request_isImmediate_trueWhenNullScheduledAt() {
         JobSubmissionRequest request = new JobSubmissionRequest(
                 "test-job", "test-topic", "TEST_TYPE",
-                List.of(), 60_000L, null, null, null, null, null);
+                List.of(), 60_000L, null, null, null, null, null, false, null);
         assertThat(request.isImmediate()).isTrue();
     }
 
@@ -362,7 +362,7 @@ class JobSubmissionServiceTest {
     void request_isImmediate_falseWhenFutureScheduledAt() {
         JobSubmissionRequest request = new JobSubmissionRequest(
                 "test-job", "test-topic", "TEST_TYPE",
-                List.of(), 60_000L, null, null, OffsetDateTime.now().plusHours(1), null, null);
+                List.of(), 60_000L, null, null, OffsetDateTime.now().plusHours(1), null, null, false, null);
         assertThat(request.isImmediate()).isFalse();
     }
 }

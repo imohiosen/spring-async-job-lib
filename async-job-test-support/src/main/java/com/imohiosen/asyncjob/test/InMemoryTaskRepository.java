@@ -44,7 +44,9 @@ public class InMemoryTaskRepository implements TaskRepository {
                 OffsetDateTime.now(), t.nextAttemptTime(),
                 t.baseIntervalMs(), t.multiplier(), t.maxDelayMs(),
                 t.asyncSubmittedAt(), t.asyncCompletedAt(),
-                t.lastErrorMessage(), t.lastErrorClass(), fenceToken, t.payload(), t.result()
+                t.lastErrorMessage(), t.lastErrorClass(), fenceToken, t.payload(), t.result(),
+                t.timeCritical(), t.tcMaxAttempts(), t.tcBaseIntervalMs(),
+                t.tcMultiplier(), t.tcMaxDelayMs(), t.tcDbSyncIntervalMs()
         ));
     }
 
@@ -62,7 +64,9 @@ public class InMemoryTaskRepository implements TaskRepository {
                 t.lastAttemptTime(), null,
                 t.baseIntervalMs(), t.multiplier(), t.maxDelayMs(),
                 t.asyncSubmittedAt(), t.asyncCompletedAt(),
-                null, null, t.fenceToken(), t.payload(), result
+                null, null, t.fenceToken(), t.payload(), result,
+                t.timeCritical(), t.tcMaxAttempts(), t.tcBaseIntervalMs(),
+                t.tcMultiplier(), t.tcMaxDelayMs(), t.tcDbSyncIntervalMs()
         ));
         return true;
     }
@@ -77,7 +81,9 @@ public class InMemoryTaskRepository implements TaskRepository {
                 t.lastAttemptTime(), t.nextAttemptTime(),
                 t.baseIntervalMs(), t.multiplier(), t.maxDelayMs(),
                 submittedAt, t.asyncCompletedAt(),
-                t.lastErrorMessage(), t.lastErrorClass(), t.fenceToken(), t.payload(), t.result()
+                t.lastErrorMessage(), t.lastErrorClass(), t.fenceToken(), t.payload(), t.result(),
+                t.timeCritical(), t.tcMaxAttempts(), t.tcBaseIntervalMs(),
+                t.tcMultiplier(), t.tcMaxDelayMs(), t.tcDbSyncIntervalMs()
         ));
     }
 
@@ -91,7 +97,9 @@ public class InMemoryTaskRepository implements TaskRepository {
                 t.lastAttemptTime(), t.nextAttemptTime(),
                 t.baseIntervalMs(), t.multiplier(), t.maxDelayMs(),
                 t.asyncSubmittedAt(), completedAt,
-                t.lastErrorMessage(), t.lastErrorClass(), t.fenceToken(), t.payload(), t.result()
+                t.lastErrorMessage(), t.lastErrorClass(), t.fenceToken(), t.payload(), t.result(),
+                t.timeCritical(), t.tcMaxAttempts(), t.tcBaseIntervalMs(),
+                t.tcMultiplier(), t.tcMaxDelayMs(), t.tcDbSyncIntervalMs()
         ));
     }
 
@@ -111,7 +119,9 @@ public class InMemoryTaskRepository implements TaskRepository {
                 lastAttemptTime, nextAttemptTime,
                 t.baseIntervalMs(), t.multiplier(), t.maxDelayMs(),
                 t.asyncSubmittedAt(), t.asyncCompletedAt(),
-                errorMessage, errorClass, t.fenceToken(), t.payload(), t.result()
+                errorMessage, errorClass, t.fenceToken(), t.payload(), t.result(),
+                t.timeCritical(), t.tcMaxAttempts(), t.tcBaseIntervalMs(),
+                t.tcMultiplier(), t.tcMaxDelayMs(), t.tcDbSyncIntervalMs()
         ));
         return true;
     }
@@ -131,7 +141,33 @@ public class InMemoryTaskRepository implements TaskRepository {
                 lastAttemptTime, null,
                 t.baseIntervalMs(), t.multiplier(), t.maxDelayMs(),
                 t.asyncSubmittedAt(), t.asyncCompletedAt(),
-                errorMessage, errorClass, t.fenceToken(), t.payload(), t.result()
+                errorMessage, errorClass, t.fenceToken(), t.payload(), t.result(),
+                t.timeCritical(), t.tcMaxAttempts(), t.tcBaseIntervalMs(),
+                t.tcMultiplier(), t.tcMaxDelayMs(), t.tcDbSyncIntervalMs()
+        ));
+        return true;
+    }
+
+    @Override
+    public boolean persistTimeCriticalProgress(UUID taskId, int attemptCount,
+                                                OffsetDateTime lastAttemptTime,
+                                                String lastErrorMessage, String lastErrorClass,
+                                                long fenceToken) {
+        JobTask existing = store.get(taskId);
+        if (existing == null || (existing.fenceToken() != null && existing.fenceToken() != fenceToken)) {
+            return false;
+        }
+        update(taskId, t -> new JobTask(
+                t.id(), t.jobId(), t.taskType(), t.destination(),
+                t.partition(), t.offset(), t.status(),
+                t.createdAt(), OffsetDateTime.now(), t.startedAt(), t.completedAt(),
+                t.deadlineAt(), t.stale(), attemptCount,
+                lastAttemptTime, t.nextAttemptTime(),
+                t.baseIntervalMs(), t.multiplier(), t.maxDelayMs(),
+                t.asyncSubmittedAt(), t.asyncCompletedAt(),
+                lastErrorMessage, lastErrorClass, t.fenceToken(), t.payload(), t.result(),
+                t.timeCritical(), t.tcMaxAttempts(), t.tcBaseIntervalMs(),
+                t.tcMultiplier(), t.tcMaxDelayMs(), t.tcDbSyncIntervalMs()
         ));
         return true;
     }

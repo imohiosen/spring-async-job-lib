@@ -113,7 +113,8 @@ class JobTaskTest {
                 null, null, TaskStatus.PENDING, now, now, null, null,
                 now.plusHours(1), false, 0, null, null,
                 5_000L, 3.0, 300_000L,
-                null, null, null, null, null, "{}", null);
+                null, null, null, null, null, "{}", null,
+                false, 0, 0L, 1.0, 0L, 0L);
 
         BackoffPolicy policy = task.backoffPolicy();
 
@@ -131,7 +132,8 @@ class JobTaskTest {
                 null, null, status, now, now, null, null,
                 now.plusHours(1), false, 0, null, nextAttemptTime,
                 1_000L, 2.0, 3_600_000L,
-                null, null, null, null, null, "{}", null);
+                null, null, null, null, null, "{}", null,
+                false, 0, 0L, 1.0, 0L, 0L);
     }
 
     private static JobTask taskWithDeadline(TaskStatus status, OffsetDateTime deadlineAt, boolean stale) {
@@ -141,6 +143,7 @@ class JobTaskTest {
                 null, null, status, now, now, null, null,
                 deadlineAt, stale, 0, null, null,
                 1_000L, 2.0, 3_600_000L,
-                null, null, null, null, null, "{}", null);
+                null, null, null, null, null, "{}", null,
+                false, 0, 0L, 1.0, 0L, 0L);
     }
 }

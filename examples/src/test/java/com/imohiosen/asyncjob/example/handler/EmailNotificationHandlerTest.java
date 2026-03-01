@@ -88,7 +88,8 @@ class EmailNotificationHandlerTest {
                 null, null,
                 null, null, null,
                 payload,
-                null, "{}"
+                null,
+                false, 0, 0L, 1.0, 0L, 0L
         );
     }
 }

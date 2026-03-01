@@ -35,7 +35,7 @@ public class InMemoryJobRepository implements JobRepository {
                 j.createdAt(), j.updatedAt(), j.startedAt(), j.completedAt(),
                 j.deadlineAt(), j.scheduledAt(), j.stale(), j.totalTasks(), j.pendingTasks(),
                 j.inProgressTasks(), j.completedTasks(), j.failedTasks(),
-                j.deadLetterTasks(), j.metadata()
+                j.deadLetterTasks(), j.metadata(), j.timeCritical()
         ));
     }
 

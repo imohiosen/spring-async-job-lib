@@ -12,28 +12,33 @@ import java.util.List;
  * {@link JobStatus#SCHEDULED} and dispatched later by the
  * {@code ScheduledJobDispatcher} sweep.
  *
- * @param jobName         unique logical name for the job
- * @param destination     messaging destination (e.g. Kafka topic)
- * @param taskType        discriminator written to each task row
- * @param payloads        list of JSON payload strings — one task per entry
- * @param deadlineMs      wall-clock duration (ms) before the job is flagged stale
- * @param taskDeadlineMs  per-task deadline; defaults to {@code deadlineMs} if {@code null}
- * @param backoffPolicy   retry backoff config; defaults to {@link BackoffPolicy#DEFAULT} if {@code null}
- * @param scheduledAt     future execution time; {@code null} means run immediately
- * @param correlationId   optional external correlation id
- * @param metadata        optional JSON metadata attached to the job row
+ * @param jobName              unique logical name for the job
+ * @param destination          messaging destination (e.g. Kafka topic)
+ * @param taskType             discriminator written to each task row
+ * @param payloads             list of JSON payload strings — one task per entry
+ * @param deadlineMs           wall-clock duration (ms) before the job is flagged stale
+ * @param taskDeadlineMs       per-task deadline; defaults to {@code deadlineMs} if {@code null}
+ * @param backoffPolicy        retry backoff config; defaults to {@link BackoffPolicy#DEFAULT} if {@code null}
+ * @param scheduledAt          future execution time; {@code null} means run immediately
+ * @param correlationId        optional external correlation id
+ * @param metadata             optional JSON metadata attached to the job row
+ * @param timeCritical         if true, tasks use Resilience4j in-memory sub-second retries
+ * @param timeCriticalPolicy   sub-second retry config; defaults to {@link TimeCriticalPolicy#DEFAULT} when
+ *                             {@code timeCritical} is true and this is {@code null}
  */
 public record JobSubmissionRequest(
-        String          jobName,
-        String          destination,
-        String          taskType,
-        List<String>    payloads,
-        long            deadlineMs,
-        Long            taskDeadlineMs,
-        BackoffPolicy   backoffPolicy,
-        OffsetDateTime  scheduledAt,
-        String          correlationId,
-        String          metadata
+        String               jobName,
+        String               destination,
+        String               taskType,
+        List<String>         payloads,
+        long                 deadlineMs,
+        Long                 taskDeadlineMs,
+        BackoffPolicy        backoffPolicy,
+        OffsetDateTime       scheduledAt,
+        String               correlationId,
+        String               metadata,
+        boolean              timeCritical,
+        TimeCriticalPolicy   timeCriticalPolicy
 ) {
     public JobSubmissionRequest {
         if (jobName == null || jobName.isBlank())
@@ -63,5 +68,17 @@ public record JobSubmissionRequest(
     /** Returns true if this request should be dispatched immediately. */
     public boolean isImmediate() {
         return scheduledAt == null || !scheduledAt.isAfter(OffsetDateTime.now());
+    }
+
+    /**
+     * Resolves the effective time-critical policy.
+     * Returns {@link TimeCriticalPolicy#DEFAULT} when {@code timeCritical} is true and
+     * no explicit policy was provided; {@code null} when {@code timeCritical} is false.
+     */
+    public TimeCriticalPolicy effectiveTimeCriticalPolicy() {
+        if (!timeCritical) {
+            return null;
+        }
+        return timeCriticalPolicy != null ? timeCriticalPolicy : TimeCriticalPolicy.DEFAULT;
     }
 }

@@ -113,6 +113,6 @@ class TaskRetrySchedulerTest {
                 now.plusHours(1), false, 1, now.minusMinutes(5), now.minusMinutes(1),
                 1_000L, 2.0, 3_600_000L,
                 null, null, "previous error", "java.lang.RuntimeException",
-                null, "{\"data\":1}", null);
+                null, "{\"data\":1}", null, false, 0, 0L, 1.0, 0L, 0L);
     }
 }

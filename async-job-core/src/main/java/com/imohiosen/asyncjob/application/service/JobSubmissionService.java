@@ -6,6 +6,7 @@ import com.imohiosen.asyncjob.domain.JobStatus;
 import com.imohiosen.asyncjob.domain.JobSubmissionRequest;
 import com.imohiosen.asyncjob.domain.JobTask;
 import com.imohiosen.asyncjob.domain.TaskStatus;
+import com.imohiosen.asyncjob.domain.TimeCriticalPolicy;
 import com.imohiosen.asyncjob.port.messaging.JobMessage;
 import com.imohiosen.asyncjob.port.messaging.JobMessageProducer;
 import com.imohiosen.asyncjob.port.repository.JobRepository;
@@ -78,7 +79,8 @@ public class JobSubmissionService {
                 jobId, request.jobName(), request.correlationId(), initialStatus,
                 now, now, null, null, deadline,
                 immediate ? null : request.scheduledAt(),
-                false, 0, 0, 0, 0, 0, 0, request.metadata());
+                false, 0, 0, 0, 0, 0, 0, request.metadata(),
+                request.timeCritical());
         jobRepository.insert(job);
 
         List<String> payloads = request.payloads();
@@ -90,6 +92,7 @@ public class JobSubmissionService {
 
         // 2. Insert task rows
         BackoffPolicy policy = request.effectiveBackoffPolicy();
+        TimeCriticalPolicy tcPolicy = request.effectiveTimeCriticalPolicy();
         OffsetDateTime taskDeadline = now.plusNanos(request.effectiveTaskDeadlineMs() * 1_000_000L);
         String destination = request.destination();
         String taskType = request.taskType();
@@ -104,7 +107,13 @@ public class JobSubmissionService {
                     null, null, taskDeadline, false, 0,
                     null, null,
                     policy.baseIntervalMs(), policy.multiplier(), policy.maxDelayMs(),
-                    null, null, null, null, null, payload, null);
+                    null, null, null, null, null, payload, null,
+                    request.timeCritical(),
+                    tcPolicy != null ? tcPolicy.maxAttempts() : 0,
+                    tcPolicy != null ? tcPolicy.baseIntervalMs() : 0L,
+                    tcPolicy != null ? tcPolicy.multiplier() : 1.0,
+                    tcPolicy != null ? tcPolicy.maxDelayMs() : 0L,
+                    tcPolicy != null ? tcPolicy.dbSyncIntervalMs() : 0L);
             taskRepository.insert(task);
 
             // 3. Publish to messaging system (only for immediate jobs)

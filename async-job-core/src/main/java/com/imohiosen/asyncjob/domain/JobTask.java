@@ -32,7 +32,13 @@ public record JobTask(
         String         lastErrorClass,
         Long           fenceToken,
         String         payload,
-        String         result
+        String         result,
+        boolean        timeCritical,
+        int            tcMaxAttempts,
+        long           tcBaseIntervalMs,
+        double         tcMultiplier,
+        long           tcMaxDelayMs,
+        long           tcDbSyncIntervalMs
 ) {
     /** Returns true if this task is eligible to be processed right now. */
     public boolean isEligible() {
@@ -51,5 +57,17 @@ public record JobTask(
     /** Derives the BackoffPolicy from the task's discrete backoff columns. */
     public BackoffPolicy backoffPolicy() {
         return new BackoffPolicy(baseIntervalMs, multiplier, maxDelayMs);
+    }
+
+    /**
+     * Derives the {@link TimeCriticalPolicy} from the task's stored tc_* columns.
+     *
+     * @return the policy if this task is time-critical, {@code null} otherwise
+     */
+    public TimeCriticalPolicy timeCriticalPolicy() {
+        if (!timeCritical) {
+            return null;
+        }
+        return new TimeCriticalPolicy(tcMaxAttempts, tcBaseIntervalMs, tcMultiplier, tcMaxDelayMs, tcDbSyncIntervalMs);
     }
 }

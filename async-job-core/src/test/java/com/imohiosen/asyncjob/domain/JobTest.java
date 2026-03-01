@@ -135,20 +135,20 @@ class JobTest {
         OffsetDateTime now = OffsetDateTime.now();
         return new Job(UUID.randomUUID(), "test-job", null, JobStatus.IN_PROGRESS,
                 now, now, now, null, now.plusHours(1), null, false,
-                total, pending, inProgress, completed, failed, deadLetter, null);
+                total, pending, inProgress, completed, failed, deadLetter, null, false);
     }
 
     private static Job jobWithDeadline(OffsetDateTime deadlineAt, boolean stale, JobStatus status) {
         OffsetDateTime now = OffsetDateTime.now();
         return new Job(UUID.randomUUID(), "test-job", null, status,
                 now, now, now, null, deadlineAt, null, stale,
-                5, 2, 1, 1, 1, 0, null);
+                5, 2, 1, 1, 1, 0, null, false);
     }
 
     private static Job jobWithSchedule(JobStatus status, OffsetDateTime scheduledAt) {
         OffsetDateTime now = OffsetDateTime.now();
         return new Job(UUID.randomUUID(), "test-job", null, status,
                 now, now, null, null, now.plusHours(1), scheduledAt, false,
-                2, 2, 0, 0, 0, 0, null);
+                2, 2, 0, 0, 0, 0, null, false);
     }
 }

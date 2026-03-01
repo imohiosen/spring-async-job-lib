@@ -68,14 +68,25 @@ public class DispatchingJobTaskConsumer extends AbstractJobTaskConsumer {
     private static final int DEFAULT_MAX_ATTEMPTS = 5;
 
     private final JobTaskHandlerRegistry registry;
+    private final TimeCriticalResilienceExecutor timeCriticalExecutor;
 
     public DispatchingJobTaskConsumer(TaskRepository taskRepository,
                                      JobRepository jobRepository,
                                      TaskLockManager lockManager,
                                      AsyncTaskExecutorBridge bridge,
                                      JobTaskHandlerRegistry registry) {
+        this(taskRepository, jobRepository, lockManager, bridge, registry, null);
+    }
+
+    public DispatchingJobTaskConsumer(TaskRepository taskRepository,
+                                     JobRepository jobRepository,
+                                     TaskLockManager lockManager,
+                                     AsyncTaskExecutorBridge bridge,
+                                     JobTaskHandlerRegistry registry,
+                                     TimeCriticalResilienceExecutor timeCriticalExecutor) {
         super(taskRepository, jobRepository, lockManager, bridge);
         this.registry = registry;
+        this.timeCriticalExecutor = timeCriticalExecutor;
     }
 
     @Override
@@ -153,5 +164,39 @@ public class DispatchingJobTaskConsumer extends AbstractJobTaskConsumer {
         return registry.getHandler(task.taskType())
                 .map(JobTaskHandler::backoffPolicy)
                 .orElse(task.backoffPolicy());
+    }
+
+    /**
+     * Submits time-critical work via Resilience4j in-memory retries.
+     * If no {@link TimeCriticalResilienceExecutor} is configured, falls back
+     * to the normal {@link #submitWork(JobTask)} path.
+     *
+     * <p>The handler is resolved by task type, and the appropriate executor
+     * (primary or retry) is selected based on the attempt count.
+     */
+    @Override
+    protected CompletableFuture<TaskResult> submitTimeCriticalWork(JobTask task, long fenceToken) {
+        if (timeCriticalExecutor == null) {
+            log.warn("Task={} is time-critical but no TimeCriticalResilienceExecutor configured, " +
+                    "falling back to normal path", task.id());
+            return submitWork(task);
+        }
+
+        return registry.getHandler(task.taskType())
+                .map(handler -> {
+                    ExecutorService exec = selectExecutor(task, handler);
+                    if (exec != null) {
+                        return CompletableFuture.supplyAsync(
+                                () -> timeCriticalExecutor.execute(task, fenceToken, handler), exec);
+                    }
+                    // Use the shared bridge executor
+                    return CompletableFuture.supplyAsync(
+                            () -> timeCriticalExecutor.execute(task, fenceToken, handler));
+                })
+                .orElseGet(() -> {
+                    log.warn("No handler for task type={} — falling back to normal submit",
+                            task.taskType());
+                    return submitWork(task);
+                });
     }
 }

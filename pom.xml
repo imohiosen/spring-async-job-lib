@@ -39,6 +39,7 @@
         <mockito.version>5.12.0</mockito.version>
         <testcontainers.version>1.20.1</testcontainers.version>
         <assertj.version>3.26.3</assertj.version>
+        <resilience4j.version>2.2.0</resilience4j.version>
     </properties>
 
     <dependencyManagement>
@@ -142,6 +143,13 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
+
+            <!-- Resilience4j -->
+            <dependency>
+                <groupId>io.github.resilience4j</groupId>
+                <artifactId>resilience4j-retry</artifactId>
+                <version>${resilience4j.version}</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 
@@ -165,7 +173,7 @@
                     <artifactId>maven-surefire-plugin</artifactId>
                     <version>3.3.1</version>
                     <configuration>
-                        <argLine>--enable-preview</argLine>
+                        <argLine>@{argLine} --enable-preview</argLine>
                     </configuration>
                 </plugin>
             </plugins>
