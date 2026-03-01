@@ -15,6 +15,7 @@
     <modules>
         <module>async-job-core</module>
         <module>async-job-test-support</module>
+        <module>spring-async-job-starter</module>
     </modules>
 
     <properties>

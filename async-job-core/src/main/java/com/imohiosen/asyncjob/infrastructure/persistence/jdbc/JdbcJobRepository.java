@@ -3,78 +3,123 @@ package com.imohiosen.asyncjob.infrastructure.persistence.jdbc;
 import com.imohiosen.asyncjob.domain.Job;
 import com.imohiosen.asyncjob.domain.JobStatus;
 import com.imohiosen.asyncjob.port.repository.JobRepository;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.core.RowMapper;
 
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.sql.Timestamp;
+import javax.sql.DataSource;
+import java.sql.*;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 /**
  * JDBC-based implementation of {@link JobRepository} for the {@code jobs} table.
- * Uses {@link JdbcTemplate} — no JPA, no Hibernate.
+ * Uses plain {@link DataSource} — no Spring, no JPA, no Hibernate.
  */
 public class JdbcJobRepository implements JobRepository {
 
-    private final JdbcTemplate jdbc;
+    private final DataSource dataSource;
 
-    public JdbcJobRepository(JdbcTemplate jdbc) {
-        this.jdbc = jdbc;
+    public JdbcJobRepository(DataSource dataSource) {
+        this.dataSource = dataSource;
     }
 
     @Override
     public void insert(Job job) {
-        jdbc.update("""
+        String sql = """
                 INSERT INTO jobs (id, job_name, correlation_id, status, created_at, updated_at,
                                   deadline_at, scheduled_at, stale, total_tasks, pending_tasks,
                                   in_progress_tasks, completed_tasks, failed_tasks, dead_letter_tasks, metadata)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb)
-                """,
-                job.id().toString(), job.jobName(), job.correlationId(), job.status().name(),
-                toTimestamp(job.createdAt()), toTimestamp(job.updatedAt()),
-                toTimestamp(job.deadlineAt()), toTimestamp(job.scheduledAt()), job.stale(),
-                job.totalTasks(), job.pendingTasks(), job.inProgressTasks(),
-                job.completedTasks(), job.failedTasks(), job.deadLetterTasks(),
-                job.metadata());
+                """;
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, job.id().toString());
+            ps.setString(2, job.jobName());
+            ps.setString(3, job.correlationId());
+            ps.setString(4, job.status().name());
+            ps.setTimestamp(5, toTimestamp(job.createdAt()));
+            ps.setTimestamp(6, toTimestamp(job.updatedAt()));
+            ps.setTimestamp(7, toTimestamp(job.deadlineAt()));
+            ps.setTimestamp(8, toTimestamp(job.scheduledAt()));
+            ps.setBoolean(9, job.stale());
+            ps.setInt(10, job.totalTasks());
+            ps.setInt(11, job.pendingTasks());
+            ps.setInt(12, job.inProgressTasks());
+            ps.setInt(13, job.completedTasks());
+            ps.setInt(14, job.failedTasks());
+            ps.setInt(15, job.deadLetterTasks());
+            ps.setString(16, job.metadata());
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to insert job " + job.id(), e);
+        }
     }
 
     @Override
     public Optional<Job> findById(UUID id) {
-        List<Job> results = jdbc.query(
-                "SELECT * FROM jobs WHERE id = ?", new JobRowMapper(), id.toString());
-        return results.stream().findFirst();
+        String sql = "SELECT * FROM jobs WHERE id = ?";
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, id.toString());
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return Optional.of(mapRow(rs));
+                }
+                return Optional.empty();
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to find job " + id, e);
+        }
     }
 
     @Override
     public void updateStatus(UUID id, JobStatus status) {
-        jdbc.update("UPDATE jobs SET status = ?, updated_at = NOW() WHERE id = ?",
-                status.name(), id.toString());
+        String sql = "UPDATE jobs SET status = ?, updated_at = NOW() WHERE id = ?";
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, status.name());
+            ps.setString(2, id.toString());
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to update status for job " + id, e);
+        }
     }
 
     @Override
     public void markStarted(UUID id) {
-        jdbc.update("""
+        String sql = """
                 UPDATE jobs SET status = 'IN_PROGRESS', started_at = NOW(), updated_at = NOW()
                 WHERE id = ?
-                """, id.toString());
+                """;
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, id.toString());
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to mark job started " + id, e);
+        }
     }
 
     @Override
     public void markCompleted(UUID id) {
-        jdbc.update("""
+        String sql = """
                 UPDATE jobs SET status = 'COMPLETED', completed_at = NOW(), updated_at = NOW()
                 WHERE id = ?
-                """, id.toString());
+                """;
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, id.toString());
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to mark job completed " + id, e);
+        }
     }
 
     @Override
     public void updateCounters(UUID jobId) {
-        jdbc.update("""
+        String sql = """
                 UPDATE jobs j SET
                     pending_tasks     = (SELECT COUNT(*) FROM job_tasks WHERE job_id = j.id AND status = 'PENDING'),
                     in_progress_tasks = (SELECT COUNT(*) FROM job_tasks WHERE job_id = j.id AND status = 'IN_PROGRESS'),
@@ -83,29 +128,55 @@ public class JdbcJobRepository implements JobRepository {
                     dead_letter_tasks = (SELECT COUNT(*) FROM job_tasks WHERE job_id = j.id AND status = 'DEAD_LETTER'),
                     updated_at        = NOW()
                 WHERE id = ?
-                """, jobId.toString());
+                """;
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, jobId.toString());
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to update counters for job " + jobId, e);
+        }
     }
 
     @Override
     public int flagStaleJobs() {
-        return jdbc.update("""
+        String sql = """
                 UPDATE jobs SET stale = TRUE, updated_at = NOW()
                 WHERE deadline_at < NOW()
                   AND stale = FALSE
                   AND status NOT IN ('SCHEDULED', 'COMPLETED', 'DEAD_LETTER')
-                """);
+                """;
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            return ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to flag stale jobs", e);
+        }
     }
 
     @Override
     public List<Job> findScheduledJobsDue(int limit) {
-        return jdbc.query("""
+        String sql = """
                 SELECT * FROM jobs
                 WHERE status = 'SCHEDULED'
                   AND scheduled_at IS NOT NULL
                   AND scheduled_at <= NOW()
                 ORDER BY scheduled_at ASC
                 LIMIT ?
-                """, new JobRowMapper(), limit);
+                """;
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, limit);
+            try (ResultSet rs = ps.executeQuery()) {
+                List<Job> results = new ArrayList<>();
+                while (rs.next()) {
+                    results.add(mapRow(rs));
+                }
+                return results;
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to find scheduled jobs due", e);
+        }
     }
 
     private static Timestamp toTimestamp(OffsetDateTime odt) {
@@ -114,33 +185,30 @@ public class JdbcJobRepository implements JobRepository {
 
     // ── Row Mapper ────────────────────────────────────────────────────────────
 
-    public static class JobRowMapper implements RowMapper<Job> {
-        @Override
-        public Job mapRow(ResultSet rs, int rowNum) throws SQLException {
-            return new Job(
-                    UUID.fromString(rs.getString("id")),
-                    rs.getString("job_name"),
-                    rs.getString("correlation_id"),
-                    JobStatus.valueOf(rs.getString("status")),
-                    toOdt(rs.getTimestamp("created_at")),
-                    toOdt(rs.getTimestamp("updated_at")),
-                    toOdt(rs.getTimestamp("started_at")),
-                    toOdt(rs.getTimestamp("completed_at")),
-                    toOdt(rs.getTimestamp("deadline_at")),
-                    toOdt(rs.getTimestamp("scheduled_at")),
-                    rs.getBoolean("stale"),
-                    rs.getInt("total_tasks"),
-                    rs.getInt("pending_tasks"),
-                    rs.getInt("in_progress_tasks"),
-                    rs.getInt("completed_tasks"),
-                    rs.getInt("failed_tasks"),
-                    rs.getInt("dead_letter_tasks"),
-                    rs.getString("metadata")
-            );
-        }
+    static Job mapRow(ResultSet rs) throws SQLException {
+        return new Job(
+                UUID.fromString(rs.getString("id")),
+                rs.getString("job_name"),
+                rs.getString("correlation_id"),
+                JobStatus.valueOf(rs.getString("status")),
+                toOdt(rs.getTimestamp("created_at")),
+                toOdt(rs.getTimestamp("updated_at")),
+                toOdt(rs.getTimestamp("started_at")),
+                toOdt(rs.getTimestamp("completed_at")),
+                toOdt(rs.getTimestamp("deadline_at")),
+                toOdt(rs.getTimestamp("scheduled_at")),
+                rs.getBoolean("stale"),
+                rs.getInt("total_tasks"),
+                rs.getInt("pending_tasks"),
+                rs.getInt("in_progress_tasks"),
+                rs.getInt("completed_tasks"),
+                rs.getInt("failed_tasks"),
+                rs.getInt("dead_letter_tasks"),
+                rs.getString("metadata")
+        );
+    }
 
-        private static OffsetDateTime toOdt(Timestamp ts) {
-            return ts == null ? null : ts.toInstant().atOffset(ZoneOffset.UTC);
-        }
+    private static OffsetDateTime toOdt(Timestamp ts) {
+        return ts == null ? null : ts.toInstant().atOffset(ZoneOffset.UTC);
     }
 }

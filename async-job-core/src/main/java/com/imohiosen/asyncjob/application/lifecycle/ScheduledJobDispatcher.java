@@ -5,7 +5,6 @@ import com.imohiosen.asyncjob.domain.Job;
 import com.imohiosen.asyncjob.port.repository.JobRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.scheduling.annotation.Scheduled;
 
 import java.util.List;
 
@@ -35,7 +34,6 @@ public class ScheduledJobDispatcher {
     /**
      * Sweeps for scheduled jobs that are due and dispatches them.
      */
-    @Scheduled(fixedDelayString = "${asyncjob.schedule.sweep-interval-ms:10000}")
     public void sweep() {
         List<Job> dueJobs = jobRepository.findScheduledJobsDue(batchSize);
 

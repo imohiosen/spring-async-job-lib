@@ -1,4 +1,4 @@
-package com.imohiosen.asyncjob.infrastructure.config;
+package com.imohiosen.asyncjob.spring.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
@@ -11,37 +11,42 @@ import com.imohiosen.asyncjob.application.lifecycle.TaskRetryScheduler;
 import com.imohiosen.asyncjob.application.service.JobSubmissionService;
 import com.imohiosen.asyncjob.infrastructure.lock.redisson.LockProperties;
 import com.imohiosen.asyncjob.infrastructure.lock.redisson.RedissonTaskLockManager;
-import com.imohiosen.asyncjob.infrastructure.messaging.kafka.KafkaJobMessageProducer;
 import com.imohiosen.asyncjob.infrastructure.persistence.jdbc.JdbcJobRepository;
 import com.imohiosen.asyncjob.infrastructure.persistence.jdbc.JdbcTaskRepository;
 import com.imohiosen.asyncjob.port.lock.TaskLockManager;
 import com.imohiosen.asyncjob.port.messaging.JobMessageProducer;
 import com.imohiosen.asyncjob.port.repository.JobRepository;
 import com.imohiosen.asyncjob.port.repository.TaskRepository;
+import com.imohiosen.asyncjob.spring.executor.SpringAsyncTaskExecutorBridge;
+import com.imohiosen.asyncjob.spring.messaging.KafkaJobMessageProducer;
 import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.scheduling.annotation.EnableAsync;
+import org.springframework.scheduling.annotation.EnableScheduling;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
+import javax.sql.DataSource;
+
 /**
- * Core Spring configuration for the async job library.
+ * Spring auto-configuration for the async job library.
+ *
+ * <p>Wires all core beans, infrastructure adapters (JDBC, Kafka, Redis),
+ * and Spring-managed scheduling / async execution.
  *
  * <h2>Usage</h2>
  * <pre>{@code
  * @Configuration
- * @Import(AsyncJobLibraryConfig.class)
- * @EnableScheduling
- * @EnableSchedulerLock(defaultLockAtMostFor = "PT10M")
+ * @Import(AsyncJobLibraryAutoConfiguration.class)
  * public class MyAppConfig { }
  * }</pre>
  *
- * <p>The consuming application must provide the following beans in its own context:
+ * <p>The consuming application must provide:
  * <ul>
- *   <li>{@link JdbcTemplate} — backed by a DataSource</li>
+ *   <li>{@link DataSource} — backed by PostgreSQL</li>
  *   <li>{@link RedissonClient} — connected to Redis</li>
  *   <li>{@link KafkaTemplate}{@code <String, String>} — configured with bootstrap servers</li>
  * </ul>
@@ -53,18 +58,19 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
  */
 @Configuration
 @EnableAsync
-public class AsyncJobLibraryConfig {
+@EnableScheduling
+public class AsyncJobLibraryAutoConfiguration {
 
     // ── Repositories ─────────────────────────────────────────────────────────
 
     @Bean
-    public JobRepository jobRepository(JdbcTemplate jdbcTemplate) {
-        return new JdbcJobRepository(jdbcTemplate);
+    public JobRepository jobRepository(DataSource dataSource) {
+        return new JdbcJobRepository(dataSource);
     }
 
     @Bean
-    public TaskRepository taskRepository(JdbcTemplate jdbcTemplate) {
-        return new JdbcTaskRepository(jdbcTemplate);
+    public TaskRepository taskRepository(DataSource dataSource) {
+        return new JdbcTaskRepository(dataSource);
     }
 
     // ── Lock ─────────────────────────────────────────────────────────────────
@@ -123,10 +129,19 @@ public class AsyncJobLibraryConfig {
 
     @Bean
     public AsyncTaskExecutorBridge asyncTaskExecutorBridge() {
-        return new AsyncTaskExecutorBridge();
+        return new SpringAsyncTaskExecutorBridge();
     }
 
-    // ── Lifecycle ─────────────────────────────────────────────────────────────
+    // ── Submission Service ────────────────────────────────────────────────────
+
+    @Bean
+    public JobSubmissionService jobSubmissionService(JobRepository jobRepository,
+                                                     TaskRepository taskRepository,
+                                                     JobMessageProducer jobMessageProducer) {
+        return new JobSubmissionService(jobRepository, taskRepository, jobMessageProducer);
+    }
+
+    // ── Lifecycle — Spring @Scheduled wrappers ────────────────────────────────
 
     @Bean
     public DeadlineGuardScheduler deadlineGuardScheduler(JobRepository jobRepository,
@@ -142,20 +157,56 @@ public class AsyncJobLibraryConfig {
         return new TaskRetryScheduler(taskRepository, jobMessageProducer, batchSize);
     }
 
-    // ── Submission Service ────────────────────────────────────────────────────
-
-    @Bean
-    public JobSubmissionService jobSubmissionService(JobRepository jobRepository,
-                                                     TaskRepository taskRepository,
-                                                     JobMessageProducer jobMessageProducer) {
-        return new JobSubmissionService(jobRepository, taskRepository, jobMessageProducer);
-    }
-
     @Bean
     public ScheduledJobDispatcher scheduledJobDispatcher(
             JobRepository jobRepository,
             JobSubmissionService jobSubmissionService,
             @Value("${asyncjob.schedule.batch-size:50}") int batchSize) {
         return new ScheduledJobDispatcher(jobRepository, jobSubmissionService, batchSize);
+    }
+
+    /**
+     * Spring-managed scheduling bridge that invokes the framework-agnostic
+     * lifecycle sweep methods via {@code @Scheduled}.
+     */
+    @Bean
+    public SchedulingBridge schedulingBridge(DeadlineGuardScheduler deadlineGuard,
+                                             TaskRetryScheduler taskRetry,
+                                             ScheduledJobDispatcher scheduledJobDispatcher) {
+        return new SchedulingBridge(deadlineGuard, taskRetry, scheduledJobDispatcher);
+    }
+
+    /**
+     * Inner bean that applies Spring {@code @Scheduled} to the core lifecycle sweeps.
+     * This keeps scheduling concerns in the starter — the core classes remain POJOs.
+     */
+    public static class SchedulingBridge {
+
+        private final DeadlineGuardScheduler deadlineGuard;
+        private final TaskRetryScheduler     taskRetry;
+        private final ScheduledJobDispatcher scheduledJobDispatcher;
+
+        public SchedulingBridge(DeadlineGuardScheduler deadlineGuard,
+                                TaskRetryScheduler taskRetry,
+                                ScheduledJobDispatcher scheduledJobDispatcher) {
+            this.deadlineGuard          = deadlineGuard;
+            this.taskRetry              = taskRetry;
+            this.scheduledJobDispatcher = scheduledJobDispatcher;
+        }
+
+        @Scheduled(fixedDelayString = "${asyncjob.deadline.sweep-interval-ms:30000}")
+        public void sweepDeadlines() {
+            deadlineGuard.sweep();
+        }
+
+        @Scheduled(fixedDelayString = "${asyncjob.retry.sweep-interval-ms:15000}")
+        public void sweepRetries() {
+            taskRetry.sweep();
+        }
+
+        @Scheduled(fixedDelayString = "${asyncjob.schedule.sweep-interval-ms:10000}")
+        public void sweepScheduledJobs() {
+            scheduledJobDispatcher.sweep();
+        }
     }
 }

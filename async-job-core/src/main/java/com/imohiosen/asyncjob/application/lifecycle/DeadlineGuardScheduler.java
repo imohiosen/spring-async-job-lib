@@ -4,7 +4,6 @@ import com.imohiosen.asyncjob.port.repository.JobRepository;
 import com.imohiosen.asyncjob.port.repository.TaskRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.scheduling.annotation.Scheduled;
 
 /**
  * Periodically scans for jobs and tasks that have breached their deadline
@@ -33,7 +32,6 @@ public class DeadlineGuardScheduler {
      * Sweeps for stale jobs and tasks. Run on a fixed interval configured via
      * {@code asyncjob.deadline.sweep-interval-ms} (default: 30 000ms).
      */
-    @Scheduled(fixedDelayString = "${asyncjob.deadline.sweep-interval-ms:30000}")
     public void sweep() {
         int staleJobs  = jobRepository.flagStaleJobs();
         int staleTasks = taskRepository.flagStaleTasks();

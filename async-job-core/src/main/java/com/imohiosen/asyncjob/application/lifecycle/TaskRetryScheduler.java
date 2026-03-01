@@ -6,7 +6,6 @@ import com.imohiosen.asyncjob.port.messaging.JobMessageProducer;
 import com.imohiosen.asyncjob.port.repository.TaskRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.scheduling.annotation.Scheduled;
 
 import java.util.List;
 
@@ -42,7 +41,6 @@ public class TaskRetryScheduler {
      * Tasks are ordered by {@code attempt_count ASC, next_attempt_time ASC}
      * so lower-attempt tasks are prioritised.
      */
-    @Scheduled(fixedDelayString = "${asyncjob.retry.sweep-interval-ms:15000}")
     public void sweep() {
         List<JobTask> retryable = taskRepository.findRetryableTasks(batchSize);
 

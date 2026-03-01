@@ -1,4 +1,4 @@
-package com.imohiosen.asyncjob.infrastructure.messaging.kafka;
+package com.imohiosen.asyncjob.spring.messaging;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -12,7 +12,7 @@ import org.springframework.kafka.support.SendResult;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * Kafka-based implementation of {@link JobMessageProducer}.
+ * Spring Kafka implementation of {@link JobMessageProducer}.
  *
  * <p>Serialises {@link JobMessage} to JSON and produces it as a Kafka record
  * with the taskId as the message key (ensuring per-task ordering).
@@ -59,9 +59,8 @@ public class KafkaJobMessageProducer implements JobMessageProducer {
     /**
      * Deserialises a raw JSON string into a {@link JobMessage}.
      *
-     * <p>This is a Kafka-specific convenience — the consuming application's
-     * {@code @KafkaListener} can use this to bridge from {@code ConsumerRecord}
-     * to the transport-agnostic {@link JobMessage}.
+     * <p>Convenience method for {@code @KafkaListener} implementations to bridge
+     * from {@code ConsumerRecord} to the transport-agnostic {@link JobMessage}.
      */
     public JobMessage deserialize(String json) {
         try {

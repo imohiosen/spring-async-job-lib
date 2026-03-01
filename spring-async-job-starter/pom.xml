@@ -10,12 +10,50 @@
         <version>1.0.0-SNAPSHOT</version>
     </parent>
 
-    <artifactId>async-job-core</artifactId>
+    <artifactId>spring-async-job-starter</artifactId>
     <packaging>jar</packaging>
-    <name>Async Job Core</name>
+    <name>Spring Async Job Starter</name>
+    <description>Spring auto-configuration for async-job-core — wires beans, scheduling, and Kafka/JDBC adapters</description>
 
     <dependencies>
-        <!-- Redisson (for distributed locking — no Spring dependency) -->
+        <!-- Core library (framework-agnostic) -->
+        <dependency>
+            <groupId>com.imohiosen</groupId>
+            <artifactId>async-job-core</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <!-- Spring -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-context</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-jdbc</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-tx</artifactId>
+        </dependency>
+
+        <!-- Spring Kafka -->
+        <dependency>
+            <groupId>org.springframework.kafka</groupId>
+            <artifactId>spring-kafka</artifactId>
+        </dependency>
+
+        <!-- ShedLock -->
+        <dependency>
+            <groupId>net.javacrumbs.shedlock</groupId>
+            <artifactId>shedlock-spring</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>net.javacrumbs.shedlock</groupId>
+            <artifactId>shedlock-provider-jdbc-template</artifactId>
+        </dependency>
+
+        <!-- Redisson (for lock manager bean) -->
         <dependency>
             <groupId>org.redisson</groupId>
             <artifactId>redisson</artifactId>
@@ -29,13 +67,6 @@
         <dependency>
             <groupId>com.fasterxml.jackson.datatype</groupId>
             <artifactId>jackson-datatype-jsr310</artifactId>
-        </dependency>
-
-        <!-- PostgreSQL (provided — app supplies DataSource) -->
-        <dependency>
-            <groupId>org.postgresql</groupId>
-            <artifactId>postgresql</artifactId>
-            <scope>provided</scope>
         </dependency>
 
         <!-- Logging -->
@@ -68,6 +99,11 @@
         <dependency>
             <groupId>ch.qos.logback</groupId>
             <artifactId>logback-classic</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-test</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>
