@@ -160,6 +160,168 @@ class DispatchingJobTaskConsumerTest {
         assertThat(consumer.getMaxAttempts(task)).isEqualTo(5);
     }
 
+    // ── Per-handler executor ──────────────────────────────────────────────────
+
+    @Test
+    void submitWork_handlerProvidesExecutor_usesHandlerExecutor() throws Exception {
+        java.util.concurrent.ExecutorService handlerExecutor = java.util.concurrent.Executors.newSingleThreadExecutor();
+        try {
+            JobTaskHandler handler = new JobTaskHandler() {
+                @Override public String taskType() { return "EXEC"; }
+                @Override public TaskResult handle(JobTask task) {
+                    return TaskResult.success("{\"exec\":true}");
+                }
+                @Override public java.util.concurrent.ExecutorService executor() {
+                    return handlerExecutor;
+                }
+            };
+            JobTaskHandlerRegistry registry = new JobTaskHandlerRegistry(List.of(handler));
+            consumer = new DispatchingJobTaskConsumer(
+                    taskRepository, jobRepository, lockManager, bridge, registry);
+
+            JobTask task = buildTask(taskId, jobId, "EXEC", TaskStatus.PENDING, 0);
+
+            when(lockManager.tryLock(taskId)).thenReturn(Optional.of(new FencedLock(5L)));
+            when(taskRepository.findEligible(taskId)).thenReturn(Optional.of(task));
+            when(taskRepository.markCompleted(eq(taskId), any(), any(), eq(5L))).thenReturn(true);
+
+            consumer.consume(new JobMessage(taskId, jobId, "EXEC", "{}"));
+
+            verify(taskRepository).markCompleted(eq(taskId), eq("{\"exec\":true}"), any(), eq(5L));
+            // Bridge should NOT be called since handler has its own executor
+            verify(bridge, never()).submitAsync(any());
+        } finally {
+            handlerExecutor.shutdownNow();
+        }
+    }
+
+    @Test
+    void submitWork_retryAttemptWithRetryExecutor_usesRetryExecutor() throws Exception {
+        java.util.concurrent.ExecutorService primaryExec = java.util.concurrent.Executors.newSingleThreadExecutor();
+        java.util.concurrent.ExecutorService retryExec = java.util.concurrent.Executors.newSingleThreadExecutor();
+        try {
+            JobTaskHandler handler = new JobTaskHandler() {
+                @Override public String taskType() { return "RETRY_EXEC"; }
+                @Override public TaskResult handle(JobTask task) {
+                    return TaskResult.success("{\"retried\":true}");
+                }
+                @Override public java.util.concurrent.ExecutorService executor() {
+                    return primaryExec;
+                }
+                @Override public java.util.concurrent.ExecutorService retryExecutor() {
+                    return retryExec;
+                }
+            };
+            JobTaskHandlerRegistry registry = new JobTaskHandlerRegistry(List.of(handler));
+            consumer = new DispatchingJobTaskConsumer(
+                    taskRepository, jobRepository, lockManager, bridge, registry);
+
+            // attemptCount=1 → retry
+            JobTask task = buildTask(taskId, jobId, "RETRY_EXEC", TaskStatus.FAILED, 1);
+
+            when(lockManager.tryLock(taskId)).thenReturn(Optional.of(new FencedLock(6L)));
+            when(taskRepository.findEligible(taskId)).thenReturn(Optional.of(task));
+            when(taskRepository.markCompleted(eq(taskId), any(), any(), eq(6L))).thenReturn(true);
+
+            consumer.consume(new JobMessage(taskId, jobId, "RETRY_EXEC", "{}"));
+
+            verify(taskRepository).markCompleted(eq(taskId), eq("{\"retried\":true}"), any(), eq(6L));
+            verify(bridge, never()).submitAsync(any());
+        } finally {
+            primaryExec.shutdownNow();
+            retryExec.shutdownNow();
+        }
+    }
+
+    @Test
+    void submitWork_retryAttemptNoRetryExecutor_fallsToPrimaryExecutor() throws Exception {
+        java.util.concurrent.ExecutorService primaryExec = java.util.concurrent.Executors.newSingleThreadExecutor();
+        try {
+            JobTaskHandler handler = new JobTaskHandler() {
+                @Override public String taskType() { return "FALLBACK"; }
+                @Override public TaskResult handle(JobTask task) {
+                    return TaskResult.success("{\"fallback\":true}");
+                }
+                @Override public java.util.concurrent.ExecutorService executor() {
+                    return primaryExec;
+                }
+                // retryExecutor() defaults to null
+            };
+            JobTaskHandlerRegistry registry = new JobTaskHandlerRegistry(List.of(handler));
+            consumer = new DispatchingJobTaskConsumer(
+                    taskRepository, jobRepository, lockManager, bridge, registry);
+
+            // attemptCount=2 → retry, no retryExecutor → falls back to primary
+            JobTask task = buildTask(taskId, jobId, "FALLBACK", TaskStatus.FAILED, 2);
+
+            when(lockManager.tryLock(taskId)).thenReturn(Optional.of(new FencedLock(7L)));
+            when(taskRepository.findEligible(taskId)).thenReturn(Optional.of(task));
+            when(taskRepository.markCompleted(eq(taskId), any(), any(), eq(7L))).thenReturn(true);
+
+            consumer.consume(new JobMessage(taskId, jobId, "FALLBACK", "{}"));
+
+            verify(taskRepository).markCompleted(eq(taskId), eq("{\"fallback\":true}"), any(), eq(7L));
+            verify(bridge, never()).submitAsync(any());
+        } finally {
+            primaryExec.shutdownNow();
+        }
+    }
+
+    @Test
+    void submitWork_noHandlerExecutor_usesSharedBridge() throws Exception {
+        JobTaskHandler handler = stubHandler("SHARED", TaskResult.success("{\"shared\":true}"));
+        JobTaskHandlerRegistry registry = new JobTaskHandlerRegistry(List.of(handler));
+        consumer = new DispatchingJobTaskConsumer(
+                taskRepository, jobRepository, lockManager, bridge, registry);
+
+        JobTask task = buildTask(taskId, jobId, "SHARED", TaskStatus.PENDING, 0);
+
+        when(lockManager.tryLock(taskId)).thenReturn(Optional.of(new FencedLock(8L)));
+        when(taskRepository.findEligible(taskId)).thenReturn(Optional.of(task));
+        when(taskRepository.markCompleted(eq(taskId), any(), any(), eq(8L))).thenReturn(true);
+        when(bridge.submitAsync(any())).thenReturn(
+                CompletableFuture.completedFuture(TaskResult.success("{\"shared\":true}")));
+
+        consumer.consume(new JobMessage(taskId, jobId, "SHARED", "{}"));
+
+        verify(bridge).submitAsync(any());
+    }
+
+    // ── Per-handler backoff policy ─────────────────────────────────────────────
+
+    @Test
+    void resolveBackoffPolicy_handlerProvidesPolicy_usesHandlerPolicy() {
+        com.imohiosen.asyncjob.domain.BackoffPolicy custom =
+                new com.imohiosen.asyncjob.domain.BackoffPolicy(5_000L, 3.0, 600_000L);
+        JobTaskHandler handler = new JobTaskHandler() {
+            @Override public String taskType() { return "CUSTOM_BACKOFF"; }
+            @Override public TaskResult handle(JobTask task) { return TaskResult.success("{}"); }
+            @Override public com.imohiosen.asyncjob.domain.BackoffPolicy backoffPolicy() { return custom; }
+        };
+        JobTaskHandlerRegistry registry = new JobTaskHandlerRegistry(List.of(handler));
+        consumer = new DispatchingJobTaskConsumer(
+                taskRepository, jobRepository, lockManager, bridge, registry);
+
+        JobTask task = buildTask(taskId, jobId, "CUSTOM_BACKOFF", TaskStatus.FAILED, 1);
+        com.imohiosen.asyncjob.domain.BackoffPolicy resolved = consumer.resolveBackoffPolicy(task);
+
+        assertThat(resolved).isSameAs(custom);
+    }
+
+    @Test
+    void resolveBackoffPolicy_noHandler_fallsBackToTaskPolicy() {
+        JobTaskHandlerRegistry registry = new JobTaskHandlerRegistry(List.of());
+        consumer = new DispatchingJobTaskConsumer(
+                taskRepository, jobRepository, lockManager, bridge, registry);
+
+        JobTask task = buildTask(taskId, jobId, "NONEXISTENT", TaskStatus.FAILED, 1);
+        com.imohiosen.asyncjob.domain.BackoffPolicy resolved = consumer.resolveBackoffPolicy(task);
+
+        assertThat(resolved.baseIntervalMs()).isEqualTo(1_000L);
+        assertThat(resolved.multiplier()).isEqualTo(2.0);
+        assertThat(resolved.maxDelayMs()).isEqualTo(3_600_000L);
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private JobTask buildTask(UUID taskId, UUID jobId, String taskType,

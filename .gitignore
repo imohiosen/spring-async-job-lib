@@ -8,3 +8,4 @@ target/
 .mvn/
 !.mvn/wrapper/
 .env
+.vscode/settings.json

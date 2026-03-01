@@ -54,6 +54,34 @@ class BackoffPolicyTest {
     }
 
     @Test
+    void constructor_invalidMaxDelayMs_throwsException() {
+        assertThatThrownBy(() -> new BackoffPolicy(1_000L, 2.0, 0))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("maxDelayMs");
+    }
+
+    @Test
+    void constructor_negativeMaxDelayMs_throwsException() {
+        assertThatThrownBy(() -> new BackoffPolicy(1_000L, 2.0, -100L))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("maxDelayMs");
+    }
+
+    @Test
+    void constructor_negativeBaseInterval_throwsException() {
+        assertThatThrownBy(() -> new BackoffPolicy(-1L, 2.0, 3_600_000L))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("baseIntervalMs");
+    }
+
+    @Test
+    void computeDelayMs_multiplierExactlyOne_noGrowth() {
+        BackoffPolicy policy = new BackoffPolicy(1_000L, 1.0, 3_600_000L);
+        assertThat(policy.computeDelayMs(0)).isEqualTo(1_000L);
+        assertThat(policy.computeDelayMs(5)).isEqualTo(1_000L);
+    }
+
+    @Test
     void defaultPolicy_hasExpectedValues() {
         assertThat(BackoffPolicy.DEFAULT.baseIntervalMs()).isEqualTo(1_000L);
         assertThat(BackoffPolicy.DEFAULT.multiplier()).isEqualTo(2.0);

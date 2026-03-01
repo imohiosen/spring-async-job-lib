@@ -108,4 +108,49 @@ class RedissonTaskLockManagerTest {
         assertThat(second.get().token()).isGreaterThan(first.get().token());
         noOp.unlock(taskId); // should not throw
     }
+
+    @Test
+    void tryLock_nonWatchdogMode_usesThreeArgOverload() throws InterruptedException {
+        LockProperties explicitLease = new LockProperties(30_000L, 100L);
+        RedissonTaskLockManager mgr = new RedissonTaskLockManager(redissonClient, explicitLease);
+
+        when(fencedLock.tryLockAndGetToken(
+                eq(100L), eq(30_000L), eq(TimeUnit.MILLISECONDS)
+        )).thenReturn(99L);
+
+        Optional<FencedLock> result = mgr.tryLock(taskId);
+
+        assertThat(result).isPresent();
+        assertThat(result.get().token()).isEqualTo(99L);
+        verify(fencedLock).tryLockAndGetToken(100L, 30_000L, TimeUnit.MILLISECONDS);
+    }
+
+    @Test
+    void tryLock_nonWatchdogMode_tokenNull_returnsEmpty() throws InterruptedException {
+        LockProperties explicitLease = new LockProperties(30_000L, 100L);
+        RedissonTaskLockManager mgr = new RedissonTaskLockManager(redissonClient, explicitLease);
+
+        when(fencedLock.tryLockAndGetToken(
+                eq(100L), eq(30_000L), eq(TimeUnit.MILLISECONDS)
+        )).thenReturn(null);
+
+        Optional<FencedLock> result = mgr.tryLock(taskId);
+
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    void tryLock_runtimeException_returnsEmpty() {
+        // Redisson methods don't declare InterruptedException, but the production code
+        // handles generic Exception. Verify that any RuntimeException is handled gracefully.
+        LockProperties explicitLease = new LockProperties(30_000L, 100L);
+        RedissonTaskLockManager mgr = new RedissonTaskLockManager(redissonClient, explicitLease);
+
+        when(fencedLock.tryLockAndGetToken(eq(100L), eq(30_000L), eq(TimeUnit.MILLISECONDS)))
+                .thenThrow(new RuntimeException("connection lost"));
+
+        Optional<FencedLock> result = mgr.tryLock(taskId);
+
+        assertThat(result).isEmpty();
+    }
 }

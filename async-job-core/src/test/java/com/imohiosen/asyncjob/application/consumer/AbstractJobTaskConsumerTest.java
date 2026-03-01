@@ -133,6 +133,88 @@ class AbstractJobTaskConsumerTest {
         verify(lockManager).unlock(taskId);
     }
 
+    @Test
+    void consume_markCompletedReturnsFalse_doesNotRecordAsyncCompleted() throws Exception {
+        when(lockManager.tryLock(taskId)).thenReturn(Optional.of(new FencedLock(42L)));
+        when(taskRepository.findEligible(taskId)).thenReturn(Optional.of(task));
+        when(taskRepository.markCompleted(eq(taskId), any(), any(), eq(42L))).thenReturn(false);
+        when(bridge.submitAsync(any())).thenReturn(
+                CompletableFuture.completedFuture(TaskResult.success("{\"ok\":true}"))
+        );
+
+        consumer.consume(new JobMessage(taskId, jobId, "TEST", "{}"));
+
+        verify(taskRepository).markCompleted(eq(taskId), any(), any(), eq(42L));
+        verify(taskRepository, never()).recordAsyncCompleted(any(), any(), anyLong());
+        verify(lockManager).unlock(taskId);
+    }
+
+    @Test
+    void consume_failureWithNullError_usesUnknownDefaults() throws Exception {
+        when(lockManager.tryLock(taskId)).thenReturn(Optional.of(new FencedLock(10L)));
+        when(taskRepository.findEligible(taskId)).thenReturn(Optional.of(task));
+        when(taskRepository.markFailed(eq(taskId), eq(1), any(), any(),
+                eq("Unknown error"), eq("Unknown"), eq(10L))).thenReturn(true);
+        when(bridge.submitAsync(any())).thenReturn(
+                CompletableFuture.completedFuture(TaskResult.failure(null))
+        );
+
+        consumer.consume(new JobMessage(taskId, jobId, "TEST", "{}"));
+
+        verify(taskRepository).markFailed(eq(taskId), eq(1), any(), any(),
+                eq("Unknown error"), eq("Unknown"), eq(10L));
+        verify(lockManager).unlock(taskId);
+    }
+
+    @Test
+    void consume_markFailedReturnsFalse_staleFenceToken() throws Exception {
+        when(lockManager.tryLock(taskId)).thenReturn(Optional.of(new FencedLock(10L)));
+        when(taskRepository.findEligible(taskId)).thenReturn(Optional.of(task));
+        when(taskRepository.markFailed(eq(taskId), eq(1), any(), any(),
+                eq("error"), eq("java.lang.RuntimeException"), eq(10L))).thenReturn(false);
+        when(bridge.submitAsync(any())).thenReturn(
+                CompletableFuture.completedFuture(TaskResult.failure(new RuntimeException("error")))
+        );
+
+        consumer.consume(new JobMessage(taskId, jobId, "TEST", "{}"));
+
+        verify(taskRepository).markFailed(eq(taskId), eq(1), any(), any(),
+                eq("error"), eq("java.lang.RuntimeException"), eq(10L));
+        verify(lockManager).unlock(taskId);
+    }
+
+    @Test
+    void consume_markDeadLetterReturnsFalse_staleFenceToken() throws Exception {
+        JobTask exhaustedTask = buildTask(taskId, jobId, TaskStatus.FAILED, 4);
+        when(lockManager.tryLock(taskId)).thenReturn(Optional.of(new FencedLock(20L)));
+        when(taskRepository.findEligible(taskId)).thenReturn(Optional.of(exhaustedTask));
+        when(taskRepository.markDeadLetter(eq(taskId), eq(5), any(), eq("fatal"),
+                eq("java.lang.RuntimeException"), eq(20L))).thenReturn(false);
+        when(bridge.submitAsync(any())).thenReturn(
+                CompletableFuture.completedFuture(TaskResult.failure(new RuntimeException("fatal")))
+        );
+
+        consumer.consume(new JobMessage(taskId, jobId, "TEST", "{}"));
+
+        verify(taskRepository).markDeadLetter(eq(taskId), eq(5), any(), eq("fatal"),
+                eq("java.lang.RuntimeException"), eq(20L));
+        verify(lockManager).unlock(taskId);
+    }
+
+    @Test
+    void consume_successPath_recordsAsyncCompleted() throws Exception {
+        when(lockManager.tryLock(taskId)).thenReturn(Optional.of(new FencedLock(42L)));
+        when(taskRepository.findEligible(taskId)).thenReturn(Optional.of(task));
+        when(taskRepository.markCompleted(eq(taskId), any(), any(), eq(42L))).thenReturn(true);
+        when(bridge.submitAsync(any())).thenReturn(
+                CompletableFuture.completedFuture(TaskResult.success("{\"ok\":true}"))
+        );
+
+        consumer.consume(new JobMessage(taskId, jobId, "TEST", "{}"));
+
+        verify(taskRepository).recordAsyncCompleted(eq(taskId), any(), eq(42L));
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private JobTask buildTask(UUID taskId, UUID jobId, TaskStatus status) {
