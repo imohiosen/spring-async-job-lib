@@ -1,14 +1,8 @@
 package com.imohiosen.asyncjob.application.scheduler;
 
 import com.imohiosen.asyncjob.domain.BackoffPolicy;
-import com.imohiosen.asyncjob.domain.Job;
-import com.imohiosen.asyncjob.domain.JobStatus;
-import com.imohiosen.asyncjob.domain.JobTask;
-import com.imohiosen.asyncjob.domain.TaskStatus;
-import com.imohiosen.asyncjob.port.messaging.JobMessage;
-import com.imohiosen.asyncjob.port.messaging.JobMessageProducer;
-import com.imohiosen.asyncjob.port.repository.JobRepository;
-import com.imohiosen.asyncjob.port.repository.TaskRepository;
+import com.imohiosen.asyncjob.domain.JobSubmissionRequest;
+import com.imohiosen.asyncjob.application.service.JobSubmissionService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -19,13 +13,17 @@ import java.util.UUID;
 /**
  * Abstract base for all job schedulers in the async job library.
  *
+ * <p>Delegates to {@link JobSubmissionService} for the actual job creation and
+ * task fan-out. Subclasses define <em>what</em> to run; this base class plus
+ * the submission service handle <em>how</em> it gets executed.
+ *
  * <h2>How to extend</h2>
  * <pre>{@code
  * @Component
  * public class InvoiceJobScheduler extends AbstractJobScheduler {
  *
- *     public InvoiceJobScheduler(JobRepository r, TaskRepository t, JobMessageProducer p) {
- *         super(r, t, p);
+ *     public InvoiceJobScheduler(JobSubmissionService s) {
+ *         super(s);
  *     }
  *
  *     @Override protected String getJobName()     { return "invoice-job"; }
@@ -51,16 +49,10 @@ public abstract class AbstractJobScheduler {
 
     private static final Logger log = LoggerFactory.getLogger(AbstractJobScheduler.class);
 
-    private final JobRepository        jobRepository;
-    private final TaskRepository       taskRepository;
-    private final JobMessageProducer   messageProducer;
+    private final JobSubmissionService submissionService;
 
-    protected AbstractJobScheduler(JobRepository jobRepository,
-                                   TaskRepository taskRepository,
-                                   JobMessageProducer messageProducer) {
-        this.jobRepository   = jobRepository;
-        this.taskRepository  = taskRepository;
-        this.messageProducer = messageProducer;
+    protected AbstractJobScheduler(JobSubmissionService submissionService) {
+        this.submissionService = submissionService;
     }
 
     // ── Contract ──────────────────────────────────────────────────────────────
@@ -103,64 +95,50 @@ public abstract class AbstractJobScheduler {
         return getDeadlineMs();
     }
 
+    /**
+     * Override to schedule the job for a future time instead of immediate execution.
+     * Returns {@code null} by default, meaning the job runs immediately.
+     */
+    protected OffsetDateTime getScheduledAt() {
+        return null;
+    }
+
     // ── Trigger ───────────────────────────────────────────────────────────────
 
     /**
      * The concrete subclass annotates its override with {@code @Scheduled} and
      * {@code @SchedulerLock}. ShedLock ensures exactly-once execution across nodes.
+     *
+     * <p>Builds a {@link JobSubmissionRequest} from the abstract methods and
+     * delegates to {@link JobSubmissionService#submit(JobSubmissionRequest)}.
      */
     public void trigger() {
-        UUID jobId       = UUID.randomUUID();
+        UUID jobId = UUID.randomUUID();
         OffsetDateTime now = OffsetDateTime.now();
-        OffsetDateTime deadline = now.plusNanos(getDeadlineMs() * 1_000_000L);
 
-        log.info("Triggering job={} name={} deadline={}", jobId, getJobName(), deadline);
+        log.info("Triggering job name={}", getJobName());
 
-        // 1. Insert the parent job row
-        Job job = new Job(jobId, getJobName(), null, JobStatus.PENDING,
-                now, now, null, null, deadline, false,
-                0, 0, 0, 0, 0, 0, null);
-        jobRepository.insert(job);
-
-        // 2. Build payloads
         JobTriggerContext ctx = new JobTriggerContext(jobId, now);
         List<String> payloads = buildTaskPayloads(ctx);
 
         if (payloads == null || payloads.isEmpty()) {
-            log.info("Job={} produced no tasks — marking COMPLETED immediately", jobId);
-            jobRepository.updateStatus(jobId, JobStatus.COMPLETED);
+            log.info("Job name={} produced no tasks — skipping", getJobName());
             return;
         }
 
-        BackoffPolicy policy = backoffPolicy();
-        OffsetDateTime taskDeadline = now.plusNanos(getTaskDeadlineMs() * 1_000_000L);
-        String destination = getDestination();
+        JobSubmissionRequest request = new JobSubmissionRequest(
+                getJobName(),
+                getDestination(),
+                getTaskType(),
+                payloads,
+                getDeadlineMs(),
+                getTaskDeadlineMs(),
+                backoffPolicy(),
+                getScheduledAt(),
+                null,
+                null
+        );
 
-        // 3. Fan out: insert task rows + publish messages
-        int produced = 0;
-        for (String payload : payloads) {
-            UUID taskId = UUID.randomUUID();
-
-            // Insert job_task row
-            JobTask task = new JobTask(
-                    taskId, jobId, getTaskType(), destination,
-                    null, null, TaskStatus.PENDING, now, now,
-                    null, null, taskDeadline, false, 0,
-                    null, null,
-                    policy.baseIntervalMs(), policy.multiplier(), policy.maxDelayMs(),
-                    null, null, null, null, null, payload, null);
-            taskRepository.insert(task);
-
-            // Publish to messaging system
-            messageProducer.publish(destination,
-                    new JobMessage(taskId, jobId, getTaskType(), payload));
-            produced++;
-        }
-
-        // 4. Update job counters and mark IN_PROGRESS
-        jobRepository.updateCounters(jobId);
-        jobRepository.markStarted(jobId);
-
-        log.info("Job={} started with {} tasks", jobId, produced);
+        submissionService.submit(request);
     }
 }

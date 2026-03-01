@@ -31,13 +31,13 @@ public class JdbcJobRepository implements JobRepository {
     public void insert(Job job) {
         jdbc.update("""
                 INSERT INTO jobs (id, job_name, correlation_id, status, created_at, updated_at,
-                                  deadline_at, stale, total_tasks, pending_tasks,
+                                  deadline_at, scheduled_at, stale, total_tasks, pending_tasks,
                                   in_progress_tasks, completed_tasks, failed_tasks, dead_letter_tasks, metadata)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb)
                 """,
                 job.id().toString(), job.jobName(), job.correlationId(), job.status().name(),
                 toTimestamp(job.createdAt()), toTimestamp(job.updatedAt()),
-                toTimestamp(job.deadlineAt()), job.stale(),
+                toTimestamp(job.deadlineAt()), toTimestamp(job.scheduledAt()), job.stale(),
                 job.totalTasks(), job.pendingTasks(), job.inProgressTasks(),
                 job.completedTasks(), job.failedTasks(), job.deadLetterTasks(),
                 job.metadata());
@@ -92,8 +92,20 @@ public class JdbcJobRepository implements JobRepository {
                 UPDATE jobs SET stale = TRUE, updated_at = NOW()
                 WHERE deadline_at < NOW()
                   AND stale = FALSE
-                  AND status NOT IN ('COMPLETED', 'DEAD_LETTER')
+                  AND status NOT IN ('SCHEDULED', 'COMPLETED', 'DEAD_LETTER')
                 """);
+    }
+
+    @Override
+    public List<Job> findScheduledJobsDue(int limit) {
+        return jdbc.query("""
+                SELECT * FROM jobs
+                WHERE status = 'SCHEDULED'
+                  AND scheduled_at IS NOT NULL
+                  AND scheduled_at <= NOW()
+                ORDER BY scheduled_at ASC
+                LIMIT ?
+                """, new JobRowMapper(), limit);
     }
 
     private static Timestamp toTimestamp(OffsetDateTime odt) {
@@ -115,6 +127,7 @@ public class JdbcJobRepository implements JobRepository {
                     toOdt(rs.getTimestamp("started_at")),
                     toOdt(rs.getTimestamp("completed_at")),
                     toOdt(rs.getTimestamp("deadline_at")),
+                    toOdt(rs.getTimestamp("scheduled_at")),
                     rs.getBoolean("stale"),
                     rs.getInt("total_tasks"),
                     rs.getInt("pending_tasks"),

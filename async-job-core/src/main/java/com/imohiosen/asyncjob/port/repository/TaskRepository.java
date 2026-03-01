@@ -56,4 +56,12 @@ public interface TaskRepository {
     List<JobTask> findRetryableTasks(int limit);
 
     List<JobTask> findDeadLetterByJobId(UUID jobId);
+
+    /**
+     * Finds all tasks belonging to a job, ordered by creation time.
+     *
+     * @param jobId the parent job id
+     * @return tasks for the given job
+     */
+    List<JobTask> findTasksByJobId(UUID jobId);
 }

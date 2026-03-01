@@ -22,8 +22,10 @@ import java.util.concurrent.ExecutorService;
  * <h2>Per-handler isolation</h2>
  * <ul>
  *   <li><strong>Executor:</strong> If a handler provides a non-null
- *       {@link JobTaskHandler#executor()}, work is submitted there instead of
- *       the shared {@code asyncJobTaskExecutor} pool.</li>
+ *       {@link JobTaskHandler#executor()}, work is submitted there for primary
+ *       attempts. If {@link JobTaskHandler#retryExecutor()} is non-null, retry
+ *       attempts use that executor instead. This allows isolation of retry
+ *       processing from primary processing.</li>
  *   <li><strong>Backoff:</strong> Each handler may define its own
  *       {@link JobTaskHandler#backoffPolicy()} which is used at retry time
  *       instead of the task's stored backoff columns.</li>
@@ -97,15 +99,20 @@ public class DispatchingJobTaskConsumer extends AbstractJobTaskConsumer {
 
     /**
      * If the handler provides a dedicated executor, submit directly to it.
-     * Otherwise, fall back to the shared {@code @Async} bridge.
+     * For retry attempts (attemptCount > 0), use retryExecutor() if available,
+     * otherwise fall back to executor(). If both are null, use the shared @Async bridge.
      */
     @Override
     protected CompletableFuture<TaskResult> submitWork(JobTask task) {
         return registry.getHandler(task.taskType())
                 .map(handler -> {
-                    ExecutorService exec = handler.executor();
+                    // Determine which executor to use based on attempt count
+                    ExecutorService exec = selectExecutor(task, handler);
+                    
                     if (exec != null) {
-                        log.debug("Using per-handler executor for type={}", task.taskType());
+                        boolean isRetry = task.attemptCount() > 0;
+                        log.debug("Using per-handler {} executor for type={}, attemptCount={}",
+                                isRetry ? "retry" : "primary", task.taskType(), task.attemptCount());
                         return CompletableFuture.supplyAsync(() -> {
                             try {
                                 return handler.handle(task);
@@ -117,6 +124,24 @@ public class DispatchingJobTaskConsumer extends AbstractJobTaskConsumer {
                     return super.submitWork(task);
                 })
                 .orElseGet(() -> super.submitWork(task));
+    }
+
+    /**
+     * Selects the appropriate executor based on whether this is a retry attempt.
+     *
+     * @param task the task being processed
+     * @param handler the handler for this task type
+     * @return the executor to use, or null to use the shared pool
+     */
+    private ExecutorService selectExecutor(JobTask task, JobTaskHandler handler) {
+        if (task.attemptCount() > 0) {
+            // This is a retry — prefer retryExecutor, fall back to primary executor
+            ExecutorService retryExec = handler.retryExecutor();
+            return retryExec != null ? retryExec : handler.executor();
+        } else {
+            // This is the primary (first) attempt
+            return handler.executor();
+        }
     }
 
     /**

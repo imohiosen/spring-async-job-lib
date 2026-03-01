@@ -16,6 +16,7 @@ public record Job(
         OffsetDateTime   startedAt,
         OffsetDateTime   completedAt,
         OffsetDateTime   deadlineAt,
+        OffsetDateTime   scheduledAt,
         boolean          stale,
         int              totalTasks,
         int              pendingTasks,
@@ -35,7 +36,15 @@ public record Job(
         return !stale
                 && deadlineAt != null
                 && OffsetDateTime.now().isAfter(deadlineAt)
+                && status != JobStatus.SCHEDULED
                 && status != JobStatus.COMPLETED
                 && status != JobStatus.DEAD_LETTER;
+    }
+
+    /** Returns true if this job is scheduled for a future time and that time has arrived. */
+    public boolean isScheduledAndDue() {
+        return status == JobStatus.SCHEDULED
+                && scheduledAt != null
+                && !OffsetDateTime.now().isBefore(scheduledAt);
     }
 }

@@ -20,6 +20,16 @@ import java.util.concurrent.ExecutorService;
  * @Component
  * public class InvoiceTaskHandler implements JobTaskHandler {
  *
+ *     private final ExecutorService primaryExecutor;
+ *     private final ExecutorService retryExecutor;
+ *
+ *     public InvoiceTaskHandler(
+ *         @Qualifier("invoicePrimaryExecutor") ExecutorService primaryExecutor,
+ *         @Qualifier("invoiceRetryExecutor") ExecutorService retryExecutor) {
+ *         this.primaryExecutor = primaryExecutor;
+ *         this.retryExecutor = retryExecutor;
+ *     }
+ *
  *     @Override public String taskType() { return "INVOICE_GENERATION"; }
  *
  *     @Override public int maxAttempts() { return 3; }
@@ -27,6 +37,16 @@ import java.util.concurrent.ExecutorService;
  *     @Override
  *     public BackoffPolicy backoffPolicy() {
  *         return new BackoffPolicy(2_000L, 3.0, 300_000L);
+ *     }
+ *
+ *     @Override
+ *     public ExecutorService executor() {
+ *         return primaryExecutor;  // For initial attempts
+ *     }
+ *
+ *     @Override
+ *     public ExecutorService retryExecutor() {
+ *         return retryExecutor;  // For retry attempts
  *     }
  *
  *     @Override
@@ -71,8 +91,8 @@ public interface JobTaskHandler {
     }
 
     /**
-     * Optional per-handler executor service. When non-null, the
-     * {@link com.imohiosen.asyncjob.application.consumer.DispatchingJobTaskConsumer DispatchingJobTaskConsumer}
+     * Optional per-handler executor service for primary task execution (attemptCount == 0).
+     * When non-null, the {@link com.imohiosen.asyncjob.application.consumer.DispatchingJobTaskConsumer DispatchingJobTaskConsumer}
      * submits work to this executor instead of the shared {@code asyncJobTaskExecutor} pool.
      *
      * <p>Return a Spring-managed {@link ExecutorService} (e.g. from a {@code @Bean} method)
@@ -81,6 +101,31 @@ public interface JobTaskHandler {
      * <p>Defaults to {@code null} — uses the shared pool.
      */
     default ExecutorService executor() {
+        return null;
+    }
+
+    /**
+     * Optional per-handler retry executor service. When non-null, the
+     * {@link com.imohiosen.asyncjob.application.consumer.DispatchingJobTaskConsumer DispatchingJobTaskConsumer}
+     * submits retry work (attemptCount > 0) to this executor instead of the primary executor.
+     *
+     * <p>This allows handlers to isolate retry processing from primary processing,
+     * for example using a smaller thread pool for retries to prevent retry storms
+     * from starving primary task processing.
+     *
+     * <p><strong>Fallback behavior:</strong>
+     * <ul>
+     *   <li>If both {@code retryExecutor()} and {@code executor()} return null → shared pool</li>
+     *   <li>If {@code retryExecutor()} returns null but {@code executor()} returns non-null → use primary executor for retries</li>
+     *   <li>If {@code retryExecutor()} returns non-null → use it for all retry attempts</li>
+     * </ul>
+     *
+     * <p>Return a Spring-managed {@link ExecutorService} (e.g. from a {@code @Bean} method)
+     * to ensure proper lifecycle management (graceful shutdown).
+     *
+     * <p>Defaults to {@code null} — retries use the same executor as primary tasks.
+     */
+    default ExecutorService retryExecutor() {
         return null;
     }
 }

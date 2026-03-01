@@ -3,7 +3,7 @@
 -- com.imohiosen / spring-async-job-lib
 -- =============================================================================
 
-CREATE TYPE job_status  AS ENUM ('PENDING','IN_PROGRESS','COMPLETED','FAILED','DEAD_LETTER');
+CREATE TYPE job_status  AS ENUM ('SCHEDULED','PENDING','IN_PROGRESS','COMPLETED','FAILED','DEAD_LETTER');
 CREATE TYPE task_status AS ENUM ('PENDING','IN_PROGRESS','COMPLETED','FAILED','DEAD_LETTER');
 
 -- ---------------------------------------------------------------------------
@@ -19,6 +19,7 @@ CREATE TABLE jobs (
     started_at          TIMESTAMPTZ,
     completed_at        TIMESTAMPTZ,
     deadline_at         TIMESTAMPTZ     NOT NULL,
+    scheduled_at        TIMESTAMPTZ,
     stale               BOOLEAN         NOT NULL DEFAULT FALSE,
     total_tasks         INT             NOT NULL DEFAULT 0,
     pending_tasks       INT             NOT NULL DEFAULT 0,
@@ -78,7 +79,11 @@ CREATE TABLE shedlock (
 -- ---------------------------------------------------------------------------
 CREATE INDEX idx_jobs_stale_deadline
     ON jobs (deadline_at)
-    WHERE stale = FALSE AND status NOT IN ('COMPLETED', 'DEAD_LETTER');
+    WHERE stale = FALSE AND status NOT IN ('SCHEDULED', 'COMPLETED', 'DEAD_LETTER');
+
+CREATE INDEX idx_jobs_scheduled_due
+    ON jobs (scheduled_at ASC)
+    WHERE status = 'SCHEDULED';
 
 CREATE INDEX idx_job_tasks_consumer_eligibility
     ON job_tasks (job_id, status, next_attempt_time)

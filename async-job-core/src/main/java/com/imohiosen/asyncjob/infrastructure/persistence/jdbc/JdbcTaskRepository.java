@@ -159,6 +159,14 @@ public class JdbcTaskRepository implements TaskRepository {
                 """, new TaskRowMapper(), jobId.toString());
     }
 
+    @Override
+    public List<JobTask> findTasksByJobId(UUID jobId) {
+        return jdbc.query("""
+                SELECT * FROM job_tasks WHERE job_id = ?
+                ORDER BY created_at ASC
+                """, new TaskRowMapper(), jobId.toString());
+    }
+
     private static Timestamp toTimestamp(OffsetDateTime odt) {
         return odt == null ? null : Timestamp.from(odt.toInstant());
     }

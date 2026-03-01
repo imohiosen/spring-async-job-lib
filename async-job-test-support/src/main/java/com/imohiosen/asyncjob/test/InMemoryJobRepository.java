@@ -4,8 +4,10 @@ import com.imohiosen.asyncjob.domain.Job;
 import com.imohiosen.asyncjob.domain.JobStatus;
 import com.imohiosen.asyncjob.port.repository.JobRepository;
 
+import java.time.OffsetDateTime;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 /**
  * In-memory implementation of {@link JobRepository} for unit tests.
@@ -31,7 +33,7 @@ public class InMemoryJobRepository implements JobRepository {
         store.computeIfPresent(id, (k, j) -> new Job(
                 j.id(), j.jobName(), j.correlationId(), status,
                 j.createdAt(), j.updatedAt(), j.startedAt(), j.completedAt(),
-                j.deadlineAt(), j.stale(), j.totalTasks(), j.pendingTasks(),
+                j.deadlineAt(), j.scheduledAt(), j.stale(), j.totalTasks(), j.pendingTasks(),
                 j.inProgressTasks(), j.completedTasks(), j.failedTasks(),
                 j.deadLetterTasks(), j.metadata()
         ));
@@ -55,6 +57,17 @@ public class InMemoryJobRepository implements JobRepository {
     @Override
     public int flagStaleJobs() {
         return staleJobsCount;
+    }
+
+    @Override
+    public List<Job> findScheduledJobsDue(int limit) {
+        OffsetDateTime now = OffsetDateTime.now();
+        return store.values().stream()
+                .filter(j -> j.status() == JobStatus.SCHEDULED)
+                .filter(j -> j.scheduledAt() != null && !j.scheduledAt().isAfter(now))
+                .sorted(Comparator.comparing(Job::scheduledAt))
+                .limit(limit)
+                .collect(Collectors.toList());
     }
 
     // ── Test helpers ─────────────────────────────────────────────────────────

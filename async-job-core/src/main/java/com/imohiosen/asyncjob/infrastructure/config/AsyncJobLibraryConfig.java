@@ -6,7 +6,9 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.imohiosen.asyncjob.application.executor.AsyncExecutorProperties;
 import com.imohiosen.asyncjob.application.executor.AsyncTaskExecutorBridge;
 import com.imohiosen.asyncjob.application.lifecycle.DeadlineGuardScheduler;
+import com.imohiosen.asyncjob.application.lifecycle.ScheduledJobDispatcher;
 import com.imohiosen.asyncjob.application.lifecycle.TaskRetryScheduler;
+import com.imohiosen.asyncjob.application.service.JobSubmissionService;
 import com.imohiosen.asyncjob.infrastructure.lock.redisson.LockProperties;
 import com.imohiosen.asyncjob.infrastructure.lock.redisson.RedissonTaskLockManager;
 import com.imohiosen.asyncjob.infrastructure.messaging.kafka.KafkaJobMessageProducer;
@@ -138,5 +140,22 @@ public class AsyncJobLibraryConfig {
             JobMessageProducer jobMessageProducer,
             @Value("${asyncjob.retry.batch-size:100}") int batchSize) {
         return new TaskRetryScheduler(taskRepository, jobMessageProducer, batchSize);
+    }
+
+    // ── Submission Service ────────────────────────────────────────────────────
+
+    @Bean
+    public JobSubmissionService jobSubmissionService(JobRepository jobRepository,
+                                                     TaskRepository taskRepository,
+                                                     JobMessageProducer jobMessageProducer) {
+        return new JobSubmissionService(jobRepository, taskRepository, jobMessageProducer);
+    }
+
+    @Bean
+    public ScheduledJobDispatcher scheduledJobDispatcher(
+            JobRepository jobRepository,
+            JobSubmissionService jobSubmissionService,
+            @Value("${asyncjob.schedule.batch-size:50}") int batchSize) {
+        return new ScheduledJobDispatcher(jobRepository, jobSubmissionService, batchSize);
     }
 }

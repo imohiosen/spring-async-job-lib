@@ -160,6 +160,14 @@ public class InMemoryTaskRepository implements TaskRepository {
                 .toList();
     }
 
+    @Override
+    public List<JobTask> findTasksByJobId(UUID jobId) {
+        return store.values().stream()
+                .filter(t -> t.jobId().equals(jobId))
+                .sorted(Comparator.comparing(JobTask::createdAt))
+                .toList();
+    }
+
     // ── Test helpers ──────────────────────────────────────────────────────────
 
     public void setStaleTasksCount(int count) { this.staleTasksCount = count; }

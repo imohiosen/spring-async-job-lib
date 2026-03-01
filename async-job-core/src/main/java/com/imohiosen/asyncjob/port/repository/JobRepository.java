@@ -3,6 +3,7 @@ package com.imohiosen.asyncjob.port.repository;
 import com.imohiosen.asyncjob.domain.Job;
 import com.imohiosen.asyncjob.domain.JobStatus;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -37,4 +38,13 @@ public interface JobRepository {
      * @return number of jobs flagged stale
      */
     int flagStaleJobs();
+
+    /**
+     * Finds jobs in {@code SCHEDULED} status whose {@code scheduledAt} time
+     * has arrived, ordered by {@code scheduledAt ASC}.
+     *
+     * @param limit maximum number of jobs to return
+     * @return due scheduled jobs
+     */
+    List<Job> findScheduledJobsDue(int limit);
 }
