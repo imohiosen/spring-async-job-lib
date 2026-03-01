@@ -28,7 +28,7 @@ class TaskLockManagerTest {
     void setUp() {
         lockManager = new TaskLockManager(redissonClient, LockProperties.DEFAULT);
         taskId = UUID.randomUUID();
-        when(redissonClient.getLock(anyString())).thenReturn(rLock);
+        lenient().when(redissonClient.getLock(anyString())).thenReturn(rLock);
     }
 
     @Test

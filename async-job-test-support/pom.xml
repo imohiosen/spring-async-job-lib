@@ -12,7 +12,7 @@
 
     <artifactId>async-job-test-support</artifactId>
     <packaging>jar</packaging>
-    <n>Async Job Test Support</n>
+    <name>Async Job Test Support</name>
 
     <dependencies>
         <dependency>
