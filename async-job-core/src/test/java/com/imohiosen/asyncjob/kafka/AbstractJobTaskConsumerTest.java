@@ -163,7 +163,7 @@ class AbstractJobTaskConsumerTest {
             super(t, j, l, b, p);
         }
 
-        @Override protected int getMaxAttempts() { return 5; }
+        @Override protected int getMaxAttempts(JobTask task) { return 5; }
 
         @Override
         protected TaskResult processTask(JobTask task) {

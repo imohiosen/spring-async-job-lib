@@ -70,8 +70,9 @@ public abstract class AbstractJobTaskConsumer {
 
     /**
      * Maximum total attempts (including first) before a task is promoted to DEAD_LETTER.
+     * The task is provided so dispatching consumers can resolve per-handler limits.
      */
-    protected abstract int getMaxAttempts();
+    protected abstract int getMaxAttempts(JobTask task);
 
     /**
      * Core task processing logic. Runs on the {@code @Async} thread pool, not the
@@ -166,13 +167,14 @@ public abstract class AbstractJobTaskConsumer {
         int nextAttemptNumber = task.attemptCount() + 1;
         String errorMessage = error != null ? error.getMessage() : "Unknown error";
         String errorClass   = error != null ? error.getClass().getName() : "Unknown";
+        int maxAttempts = getMaxAttempts(task);
 
-        log.warn("Task={} failed (attempt {}/{}): {}", task.id(), nextAttemptNumber, getMaxAttempts(), errorMessage);
+        log.warn("Task={} failed (attempt {}/{}): {}", task.id(), nextAttemptNumber, maxAttempts, errorMessage);
 
-        if (nextAttemptNumber >= getMaxAttempts()) {
+        if (nextAttemptNumber >= maxAttempts) {
             taskRepository.markDeadLetter(task.id(), nextAttemptNumber,
                     OffsetDateTime.now(), errorMessage, errorClass);
-            log.error("Task={} exhausted all {} attempts, moved to DEAD_LETTER", task.id(), getMaxAttempts());
+            log.error("Task={} exhausted all {} attempts, moved to DEAD_LETTER", task.id(), maxAttempts);
         } else {
             long delayMs = task.backoffPolicy().computeDelayMs(nextAttemptNumber);
             OffsetDateTime nextAttemptTime = OffsetDateTime.now().plusNanos(delayMs * 1_000_000L);
