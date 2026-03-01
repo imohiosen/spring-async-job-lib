@@ -14,7 +14,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class InMemoryTaskRepository extends TaskRepository {
 
     private final Map<UUID, JobTask> store = new ConcurrentHashMap<>();
-    private int timedOutTasksCount = 0;
+    private int staleTasksCount = 0;
 
     public InMemoryTaskRepository() {
         super(null);
@@ -42,7 +42,7 @@ public class InMemoryTaskRepository extends TaskRepository {
                 t.id(), t.jobId(), t.taskType(), t.kafkaTopic(),
                 t.kafkaPartition(), t.kafkaOffset(), TaskStatus.IN_PROGRESS,
                 t.createdAt(), OffsetDateTime.now(), startedAt, t.completedAt(),
-                t.deadlineAt(), t.timedOut(), t.attemptCount() + 1,
+                t.deadlineAt(), t.stale(), t.attemptCount() + 1,
                 OffsetDateTime.now(), t.nextAttemptTime(),
                 t.baseIntervalMs(), t.multiplier(), t.maxDelayMs(),
                 t.asyncSubmittedAt(), t.asyncCompletedAt(),
@@ -60,7 +60,7 @@ public class InMemoryTaskRepository extends TaskRepository {
                 t.id(), t.jobId(), t.taskType(), t.kafkaTopic(),
                 t.kafkaPartition(), t.kafkaOffset(), TaskStatus.COMPLETED,
                 t.createdAt(), OffsetDateTime.now(), t.startedAt(), completedAt,
-                t.deadlineAt(), t.timedOut(), t.attemptCount(),
+                t.deadlineAt(), t.stale(), t.attemptCount(),
                 t.lastAttemptTime(), null,
                 t.baseIntervalMs(), t.multiplier(), t.maxDelayMs(),
                 t.asyncSubmittedAt(), t.asyncCompletedAt(),
@@ -75,7 +75,7 @@ public class InMemoryTaskRepository extends TaskRepository {
                 t.id(), t.jobId(), t.taskType(), t.kafkaTopic(),
                 t.kafkaPartition(), t.kafkaOffset(), t.status(),
                 t.createdAt(), OffsetDateTime.now(), t.startedAt(), t.completedAt(),
-                t.deadlineAt(), t.timedOut(), t.attemptCount(),
+                t.deadlineAt(), t.stale(), t.attemptCount(),
                 t.lastAttemptTime(), t.nextAttemptTime(),
                 t.baseIntervalMs(), t.multiplier(), t.maxDelayMs(),
                 submittedAt, t.asyncCompletedAt(),
@@ -89,7 +89,7 @@ public class InMemoryTaskRepository extends TaskRepository {
                 t.id(), t.jobId(), t.taskType(), t.kafkaTopic(),
                 t.kafkaPartition(), t.kafkaOffset(), t.status(),
                 t.createdAt(), OffsetDateTime.now(), t.startedAt(), t.completedAt(),
-                t.deadlineAt(), t.timedOut(), t.attemptCount(),
+                t.deadlineAt(), t.stale(), t.attemptCount(),
                 t.lastAttemptTime(), t.nextAttemptTime(),
                 t.baseIntervalMs(), t.multiplier(), t.maxDelayMs(),
                 t.asyncSubmittedAt(), completedAt,
@@ -109,7 +109,7 @@ public class InMemoryTaskRepository extends TaskRepository {
                 t.id(), t.jobId(), t.taskType(), t.kafkaTopic(),
                 t.kafkaPartition(), t.kafkaOffset(), TaskStatus.FAILED,
                 t.createdAt(), OffsetDateTime.now(), t.startedAt(), t.completedAt(),
-                t.deadlineAt(), t.timedOut(), attemptCount,
+                t.deadlineAt(), t.stale(), attemptCount,
                 lastAttemptTime, nextAttemptTime,
                 t.baseIntervalMs(), t.multiplier(), t.maxDelayMs(),
                 t.asyncSubmittedAt(), t.asyncCompletedAt(),
@@ -129,7 +129,7 @@ public class InMemoryTaskRepository extends TaskRepository {
                 t.id(), t.jobId(), t.taskType(), t.kafkaTopic(),
                 t.kafkaPartition(), t.kafkaOffset(), TaskStatus.DEAD_LETTER,
                 t.createdAt(), OffsetDateTime.now(), t.startedAt(), t.completedAt(),
-                t.deadlineAt(), t.timedOut(), attemptCount,
+                t.deadlineAt(), t.stale(), attemptCount,
                 lastAttemptTime, null,
                 t.baseIntervalMs(), t.multiplier(), t.maxDelayMs(),
                 t.asyncSubmittedAt(), t.asyncCompletedAt(),
@@ -139,13 +139,24 @@ public class InMemoryTaskRepository extends TaskRepository {
     }
 
     @Override
-    public int flagTimedOutTasks() {
-        return timedOutTasksCount;
+    public int flagStaleTasks() {
+        return staleTasksCount;
+    }
+
+    @Override
+    public java.util.List<JobTask> findRetryableTasks(int limit) {
+        return store.values().stream()
+                .filter(t -> t.status() == TaskStatus.FAILED)
+                .filter(t -> t.nextAttemptTime() != null && !t.nextAttemptTime().isAfter(OffsetDateTime.now()))
+                .sorted(java.util.Comparator.comparingInt(JobTask::attemptCount)
+                        .thenComparing(JobTask::nextAttemptTime))
+                .limit(limit)
+                .toList();
     }
 
     // ── Test helpers ──────────────────────────────────────────────────────────
 
-    public void setTimedOutTasksCount(int count) { this.timedOutTasksCount = count; }
+    public void setStaleTasksCount(int count) { this.staleTasksCount = count; }
     public Collection<JobTask> all() { return Collections.unmodifiableCollection(store.values()); }
     public void clear() { store.clear(); }
 

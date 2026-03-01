@@ -20,7 +20,7 @@ public record JobTask(
         OffsetDateTime startedAt,
         OffsetDateTime completedAt,
         OffsetDateTime deadlineAt,
-        boolean        timedOut,
+        boolean        stale,
         int            attemptCount,
         OffsetDateTime lastAttemptTime,
         OffsetDateTime nextAttemptTime,
@@ -41,9 +41,9 @@ public record JobTask(
                 && (nextAttemptTime == null || !OffsetDateTime.now().isBefore(nextAttemptTime));
     }
 
-    /** Returns true if the task deadline has passed and the task is still in progress. */
+    /** Returns true if the task deadline has passed and the task has not been flagged stale yet. */
     public boolean isDeadlineBreached() {
-        return !timedOut
+        return !stale
                 && deadlineAt != null
                 && OffsetDateTime.now().isAfter(deadlineAt)
                 && status == TaskStatus.IN_PROGRESS;

@@ -20,34 +20,34 @@ class DeadlineGuardSchedulerTest {
 
     @Test
     void sweep_noViolations_completesSilently() {
-        when(jobRepository.flagTimedOutJobs()).thenReturn(0);
-        when(taskRepository.flagTimedOutTasks()).thenReturn(0);
+        when(jobRepository.flagStaleJobs()).thenReturn(0);
+        when(taskRepository.flagStaleTasks()).thenReturn(0);
 
         scheduler.sweep();
 
-        verify(jobRepository).flagTimedOutJobs();
-        verify(taskRepository).flagTimedOutTasks();
+        verify(jobRepository).flagStaleJobs();
+        verify(taskRepository).flagStaleTasks();
     }
 
     @Test
-    void sweep_withTimedOutJobsAndTasks_flagsBoth() {
-        when(jobRepository.flagTimedOutJobs()).thenReturn(2);
-        when(taskRepository.flagTimedOutTasks()).thenReturn(7);
+    void sweep_withStaleJobsAndTasks_flagsBoth() {
+        when(jobRepository.flagStaleJobs()).thenReturn(2);
+        when(taskRepository.flagStaleTasks()).thenReturn(7);
 
         scheduler.sweep();
 
-        verify(jobRepository).flagTimedOutJobs();
-        verify(taskRepository).flagTimedOutTasks();
+        verify(jobRepository).flagStaleJobs();
+        verify(taskRepository).flagStaleTasks();
     }
 
     @Test
     void sweep_alwaysQueriesBothRepositories() {
-        when(jobRepository.flagTimedOutJobs()).thenReturn(1);
-        when(taskRepository.flagTimedOutTasks()).thenReturn(0);
+        when(jobRepository.flagStaleJobs()).thenReturn(1);
+        when(taskRepository.flagStaleTasks()).thenReturn(0);
 
         scheduler.sweep();
 
-        verify(jobRepository, times(1)).flagTimedOutJobs();
-        verify(taskRepository, times(1)).flagTimedOutTasks();
+        verify(jobRepository, times(1)).flagStaleJobs();
+        verify(taskRepository, times(1)).flagStaleTasks();
     }
 }

@@ -34,9 +34,9 @@ class TaskLockManagerTest {
 
     @Test
     void tryLock_whenLockAcquired_returnsFencedLockWithToken() throws InterruptedException {
+        // DEFAULT uses watchdog mode (leaseTimeMs = -1), so 2-param overload is used
         when(fencedLock.tryLockAndGetToken(
                 eq(LockProperties.DEFAULT.waitTimeMs()),
-                eq(LockProperties.DEFAULT.leaseTimeMs()),
                 eq(TimeUnit.MILLISECONDS)
         )).thenReturn(42L);
 
@@ -49,7 +49,7 @@ class TaskLockManagerTest {
 
     @Test
     void tryLock_whenLockNotAcquired_returnsEmpty() throws InterruptedException {
-        when(fencedLock.tryLockAndGetToken(anyLong(), anyLong(), any())).thenReturn(null);
+        when(fencedLock.tryLockAndGetToken(anyLong(), any(TimeUnit.class))).thenReturn(null);
 
         Optional<FencedLock> result = lockManager.tryLock(taskId);
 
@@ -58,7 +58,7 @@ class TaskLockManagerTest {
 
     @Test
     void tryLock_onException_returnsEmpty() {
-        when(fencedLock.tryLockAndGetToken(anyLong(), anyLong(), any()))
+        when(fencedLock.tryLockAndGetToken(anyLong(), any(TimeUnit.class)))
                 .thenThrow(new RuntimeException("Redis connection lost"));
 
         Optional<FencedLock> result = lockManager.tryLock(taskId);
@@ -68,7 +68,7 @@ class TaskLockManagerTest {
 
     @Test
     void tryLock_successiveAcquisitions_returnIncreasingTokens() throws InterruptedException {
-        when(fencedLock.tryLockAndGetToken(anyLong(), anyLong(), any()))
+        when(fencedLock.tryLockAndGetToken(anyLong(), any(TimeUnit.class)))
                 .thenReturn(7L)
                 .thenReturn(8L);
 

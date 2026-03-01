@@ -1,7 +1,10 @@
 package com.imohiosen.asyncjob.handler;
 
+import com.imohiosen.asyncjob.domain.BackoffPolicy;
 import com.imohiosen.asyncjob.domain.JobTask;
 import com.imohiosen.asyncjob.domain.TaskResult;
+
+import java.util.concurrent.ExecutorService;
 
 /**
  * Strategy interface for processing a specific type of job task.
@@ -20,6 +23,11 @@ import com.imohiosen.asyncjob.domain.TaskResult;
  *     @Override public String taskType() { return "INVOICE_GENERATION"; }
  *
  *     @Override public int maxAttempts() { return 3; }
+ *
+ *     @Override
+ *     public BackoffPolicy backoffPolicy() {
+ *         return new BackoffPolicy(2_000L, 3.0, 300_000L);
+ *     }
  *
  *     @Override
  *     public TaskResult handle(JobTask task) {
@@ -51,5 +59,28 @@ public interface JobTaskHandler {
      */
     default int maxAttempts() {
         return 5;
+    }
+
+    /**
+     * Backoff policy used when retrying failed tasks of this type.
+     * Overrides the task's stored backoff columns at retry time.
+     * Defaults to {@link BackoffPolicy#DEFAULT}.
+     */
+    default BackoffPolicy backoffPolicy() {
+        return BackoffPolicy.DEFAULT;
+    }
+
+    /**
+     * Optional per-handler executor service. When non-null, the
+     * {@link com.imohiosen.asyncjob.kafka.DispatchingJobTaskConsumer DispatchingJobTaskConsumer}
+     * submits work to this executor instead of the shared {@code asyncJobTaskExecutor} pool.
+     *
+     * <p>Return a Spring-managed {@link ExecutorService} (e.g. from a {@code @Bean} method)
+     * to ensure proper lifecycle management (graceful shutdown).
+     *
+     * <p>Defaults to {@code null} — uses the shared pool.
+     */
+    default ExecutorService executor() {
+        return null;
     }
 }

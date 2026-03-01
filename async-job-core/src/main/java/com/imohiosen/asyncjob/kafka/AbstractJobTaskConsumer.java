@@ -1,5 +1,6 @@
 package com.imohiosen.asyncjob.kafka;
 
+import com.imohiosen.asyncjob.domain.BackoffPolicy;
 import com.imohiosen.asyncjob.domain.JobTask;
 import com.imohiosen.asyncjob.domain.TaskResult;
 import com.imohiosen.asyncjob.domain.TaskStatus;
@@ -16,7 +17,6 @@ import java.time.OffsetDateTime;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
 
 /**
  * Abstract base for all Kafka task consumers in the async job library.
@@ -26,7 +26,7 @@ import java.util.concurrent.TimeUnit;
  * @Component
  * public class InvoiceTaskConsumer extends AbstractJobTaskConsumer {
  *
- *     @Override protected int getMaxAttempts() { return 5; }
+ *     @Override protected int getMaxAttempts(JobTask task) { return 5; }
  *
  *     @Override
  *     protected TaskResult processTask(JobTask task) {
@@ -44,6 +44,11 @@ import java.util.concurrent.TimeUnit;
  *
  * <p><strong>Critical:</strong> The entire consumer body is wrapped in a try-catch.
  * Exceptions are logged and swallowed to prevent killing the Kafka consumer thread.
+ *
+ * <p><strong>No forced timeout.</strong> The consumer waits indefinitely for the
+ * handler to complete. The Redisson lock is kept alive via the watchdog mechanism
+ * so the task stays locked no matter how long it takes. The final status (success
+ * or failure) is always persisted.
  */
 public abstract class AbstractJobTaskConsumer {
 
@@ -83,15 +88,25 @@ public abstract class AbstractJobTaskConsumer {
     protected abstract TaskResult processTask(JobTask task);
 
     /**
-     * Timeout (ms) to wait for the async Future to complete.
-     * Defaults to the task's remaining time until {@code deadlineAt}.
-     * Override to supply a fixed timeout.
+     * Submits work to an executor and returns a future. Override in subclasses
+     * to use per-handler executor services.
+     *
+     * @param task the task being processed
+     * @return a future that resolves to the task result
      */
-    protected long asyncTimeoutMs(JobTask task) {
-        if (task.deadlineAt() == null) return 300_000L; // 5 min default
-        long remaining = task.deadlineAt().toInstant().toEpochMilli()
-                - System.currentTimeMillis();
-        return Math.max(remaining, 1_000L);
+    protected CompletableFuture<TaskResult> submitWork(JobTask task) {
+        return bridge.submitAsync(() -> processTask(task));
+    }
+
+    /**
+     * Resolves the backoff policy for a given task. Override in subclasses
+     * to use per-handler backoff policies.
+     *
+     * @param task the task that failed
+     * @return the backoff policy to use for retry delay calculation
+     */
+    protected BackoffPolicy resolveBackoffPolicy(JobTask task) {
+        return task.backoffPolicy();
     }
 
     // ── Kafka entry point ─────────────────────────────────────────────────────
@@ -116,7 +131,7 @@ public abstract class AbstractJobTaskConsumer {
         JobKafkaMessage message = kafkaProducer.deserialize(record.value());
         UUID taskId = message.taskId();
 
-        // 1. Acquire Redisson fenced lock — token prevents stale writes after lease expiry
+        // 1. Acquire Redisson fenced lock — watchdog auto-renews while this thread is alive
         Optional<FencedLock> maybeLock = lockManager.tryLock(taskId);
         if (maybeLock.isEmpty()) {
             log.warn("Could not acquire lock for task={}, skipping (another node is processing)", taskId);
@@ -138,14 +153,14 @@ public abstract class AbstractJobTaskConsumer {
             // 3. Mark IN_PROGRESS with fence token — subsequent writes are guarded by this token
             taskRepository.markInProgress(taskId, OffsetDateTime.now(), fenceToken);
 
-            // 4. Step 1 — submit to @Async executor; record asyncSubmittedAt
+            // 4. Submit to executor (shared pool or per-handler); record asyncSubmittedAt
             OffsetDateTime submittedAt = OffsetDateTime.now();
-            CompletableFuture<TaskResult> future = bridge.submitAsync(() -> processTask(task));
+            CompletableFuture<TaskResult> future = submitWork(task);
             taskRepository.recordAsyncSubmitted(taskId, submittedAt, fenceToken);
-            log.debug("Task={} submitted to async executor at {} (fence={})", taskId, submittedAt, fenceToken);
+            log.debug("Task={} submitted to executor at {} (fence={})", taskId, submittedAt, fenceToken);
 
-            // 5. Step 2 — wait for completion with deadline-aware timeout
-            TaskResult result = future.get(asyncTimeoutMs(task), TimeUnit.MILLISECONDS);
+            // 5. Wait indefinitely — lock watchdog keeps us safe; no forced timeout
+            TaskResult result = future.get();
 
             // 6. Handle result — fence token ensures stale holders cannot overwrite
             if (result.isSuccess()) {
@@ -166,7 +181,8 @@ public abstract class AbstractJobTaskConsumer {
             jobRepository.updateCounters(task.jobId());
 
         } finally {
-            // Always release — lease time acts as deadlock prevention if JVM dies here
+            // Always release — watchdog stops on unlock; if JVM dies the watchdog
+            // stops renewing and the lock expires automatically
             lockManager.unlock(taskId);
         }
     }
@@ -188,7 +204,8 @@ public abstract class AbstractJobTaskConsumer {
                 log.warn("Task={} DEAD_LETTER update rejected — fence token {} is stale", task.id(), fenceToken);
             }
         } else {
-            long delayMs = task.backoffPolicy().computeDelayMs(nextAttemptNumber);
+            BackoffPolicy policy = resolveBackoffPolicy(task);
+            long delayMs = policy.computeDelayMs(nextAttemptNumber);
             OffsetDateTime nextAttemptTime = OffsetDateTime.now().plusNanos(delayMs * 1_000_000L);
             boolean written = taskRepository.markFailed(task.id(), nextAttemptNumber,
                     OffsetDateTime.now(), nextAttemptTime, errorMessage, errorClass, fenceToken);

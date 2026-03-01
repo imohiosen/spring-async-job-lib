@@ -29,13 +29,13 @@ public class JobRepository {
     public void insert(Job job) {
         jdbc.update("""
                 INSERT INTO jobs (id, job_name, correlation_id, status, created_at, updated_at,
-                                  deadline_at, timed_out, total_tasks, pending_tasks,
+                                  deadline_at, stale, total_tasks, pending_tasks,
                                   in_progress_tasks, completed_tasks, failed_tasks, dead_letter_tasks, metadata)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb)
                 """,
-                job.id(), job.jobName(), job.correlationId(), job.status().name(),
+                job.id().toString(), job.jobName(), job.correlationId(), job.status().name(),
                 toTimestamp(job.createdAt()), toTimestamp(job.updatedAt()),
-                toTimestamp(job.deadlineAt()), job.timedOut(),
+                toTimestamp(job.deadlineAt()), job.stale(),
                 job.totalTasks(), job.pendingTasks(), job.inProgressTasks(),
                 job.completedTasks(), job.failedTasks(), job.deadLetterTasks(),
                 job.metadata());
@@ -43,27 +43,27 @@ public class JobRepository {
 
     public Optional<Job> findById(UUID id) {
         List<Job> results = jdbc.query(
-                "SELECT * FROM jobs WHERE id = ?", new JobRowMapper(), id);
+                "SELECT * FROM jobs WHERE id = ?", new JobRowMapper(), id.toString());
         return results.stream().findFirst();
     }
 
     public void updateStatus(UUID id, JobStatus status) {
         jdbc.update("UPDATE jobs SET status = ?, updated_at = NOW() WHERE id = ?",
-                status.name(), id);
+                status.name(), id.toString());
     }
 
     public void markStarted(UUID id) {
         jdbc.update("""
                 UPDATE jobs SET status = 'IN_PROGRESS', started_at = NOW(), updated_at = NOW()
                 WHERE id = ?
-                """, id);
+                """, id.toString());
     }
 
     public void markCompleted(UUID id) {
         jdbc.update("""
                 UPDATE jobs SET status = 'COMPLETED', completed_at = NOW(), updated_at = NOW()
                 WHERE id = ?
-                """, id);
+                """, id.toString());
     }
 
     /**
@@ -80,19 +80,20 @@ public class JobRepository {
                     dead_letter_tasks = (SELECT COUNT(*) FROM job_tasks WHERE job_id = j.id AND status = 'DEAD_LETTER'),
                     updated_at        = NOW()
                 WHERE id = ?
-                """, jobId);
+                """, jobId.toString());
     }
 
     /**
-     * Flags all jobs that have breached their deadline and are not yet in a terminal state.
+     * Flags all jobs that have breached their deadline as stale.
+     * Does NOT change the job's status — child tasks continue running.
      *
-     * @return number of jobs flagged
+     * @return number of jobs flagged stale
      */
-    public int flagTimedOutJobs() {
+    public int flagStaleJobs() {
         return jdbc.update("""
-                UPDATE jobs SET timed_out = TRUE, status = 'FAILED', updated_at = NOW()
+                UPDATE jobs SET stale = TRUE, updated_at = NOW()
                 WHERE deadline_at < NOW()
-                  AND timed_out = FALSE
+                  AND stale = FALSE
                   AND status NOT IN ('COMPLETED', 'DEAD_LETTER')
                 """);
     }
@@ -116,7 +117,7 @@ public class JobRepository {
                     toOdt(rs.getTimestamp("started_at")),
                     toOdt(rs.getTimestamp("completed_at")),
                     toOdt(rs.getTimestamp("deadline_at")),
-                    rs.getBoolean("timed_out"),
+                    rs.getBoolean("stale"),
                     rs.getInt("total_tasks"),
                     rs.getInt("pending_tasks"),
                     rs.getInt("in_progress_tasks"),

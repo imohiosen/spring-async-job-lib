@@ -17,7 +17,7 @@ public record Job(
         OffsetDateTime   startedAt,
         OffsetDateTime   completedAt,
         OffsetDateTime   deadlineAt,
-        boolean          timedOut,
+        boolean          stale,
         int              totalTasks,
         int              pendingTasks,
         int              inProgressTasks,
@@ -31,9 +31,9 @@ public record Job(
         return completedTasks + failedTasks + deadLetterTasks >= totalTasks && totalTasks > 0;
     }
 
-    /** Returns true if the job deadline has passed and the job has not completed. */
+    /** Returns true if the job deadline has passed and the job has not been flagged stale yet. */
     public boolean isDeadlineBreached() {
-        return !timedOut
+        return !stale
                 && deadlineAt != null
                 && OffsetDateTime.now().isAfter(deadlineAt)
                 && status != JobStatus.COMPLETED

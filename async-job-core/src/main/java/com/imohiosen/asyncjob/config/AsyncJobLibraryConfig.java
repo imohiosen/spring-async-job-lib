@@ -7,6 +7,7 @@ import com.imohiosen.asyncjob.executor.AsyncExecutorProperties;
 import com.imohiosen.asyncjob.executor.AsyncTaskExecutorBridge;
 import com.imohiosen.asyncjob.kafka.JobKafkaProducer;
 import com.imohiosen.asyncjob.lifecycle.DeadlineGuardScheduler;
+import com.imohiosen.asyncjob.lifecycle.TaskRetryScheduler;
 import com.imohiosen.asyncjob.lock.LockProperties;
 import com.imohiosen.asyncjob.lock.TaskLockManager;
 import com.imohiosen.asyncjob.repository.JobRepository;
@@ -59,8 +60,8 @@ public class AsyncJobLibraryConfig {
 
     @Bean
     public LockProperties lockProperties(
-            @Value("${asyncjob.lock.lease-time-ms:30000}") long leaseTimeMs,
-            @Value("${asyncjob.lock.wait-time-ms:0}")      long waitTimeMs) {
+            @Value("${asyncjob.lock.lease-time-ms:-1}") long leaseTimeMs,
+            @Value("${asyncjob.lock.wait-time-ms:0}")   long waitTimeMs) {
         return new LockProperties(leaseTimeMs, waitTimeMs);
     }
 
@@ -120,5 +121,13 @@ public class AsyncJobLibraryConfig {
     public DeadlineGuardScheduler deadlineGuardScheduler(JobRepository jobRepository,
                                                           TaskRepository taskRepository) {
         return new DeadlineGuardScheduler(jobRepository, taskRepository);
+    }
+
+    @Bean
+    public TaskRetryScheduler taskRetryScheduler(
+            TaskRepository taskRepository,
+            JobKafkaProducer kafkaProducer,
+            @Value("${asyncjob.retry.batch-size:100}") int batchSize) {
+        return new TaskRetryScheduler(taskRepository, kafkaProducer, batchSize);
     }
 }

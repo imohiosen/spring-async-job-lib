@@ -10,7 +10,7 @@ CREATE TYPE task_status AS ENUM ('PENDING','IN_PROGRESS','COMPLETED','FAILED','D
 -- JOBS — one row per scheduled trigger execution
 -- ---------------------------------------------------------------------------
 CREATE TABLE jobs (
-    id                  UUID            PRIMARY KEY DEFAULT gen_random_uuid(),
+    id                  VARCHAR(36)     PRIMARY KEY,
     job_name            VARCHAR(255)    NOT NULL,
     correlation_id      VARCHAR(255),
     status              job_status      NOT NULL DEFAULT 'PENDING',
@@ -19,7 +19,7 @@ CREATE TABLE jobs (
     started_at          TIMESTAMPTZ,
     completed_at        TIMESTAMPTZ,
     deadline_at         TIMESTAMPTZ     NOT NULL,
-    timed_out           BOOLEAN         NOT NULL DEFAULT FALSE,
+    stale               BOOLEAN         NOT NULL DEFAULT FALSE,
     total_tasks         INT             NOT NULL DEFAULT 0,
     pending_tasks       INT             NOT NULL DEFAULT 0,
     in_progress_tasks   INT             NOT NULL DEFAULT 0,
@@ -33,8 +33,8 @@ CREATE TABLE jobs (
 -- JOB_TASKS — one row per Kafka message / unit of work
 -- ---------------------------------------------------------------------------
 CREATE TABLE job_tasks (
-    id                  UUID            PRIMARY KEY DEFAULT gen_random_uuid(),
-    job_id              UUID            NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+    id                  VARCHAR(36)     PRIMARY KEY,
+    job_id              VARCHAR(36)     NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
     task_type           VARCHAR(255)    NOT NULL,
     kafka_topic         VARCHAR(500)    NOT NULL,
     kafka_partition     INT,
@@ -45,7 +45,7 @@ CREATE TABLE job_tasks (
     started_at          TIMESTAMPTZ,
     completed_at        TIMESTAMPTZ,
     deadline_at         TIMESTAMPTZ     NOT NULL,
-    timed_out           BOOLEAN         NOT NULL DEFAULT FALSE,
+    stale               BOOLEAN         NOT NULL DEFAULT FALSE,
     attempt_count       INT             NOT NULL DEFAULT 0,
     last_attempt_time   TIMESTAMPTZ,
     next_attempt_time   TIMESTAMPTZ,
@@ -76,17 +76,21 @@ CREATE TABLE shedlock (
 -- ---------------------------------------------------------------------------
 -- INDEXES
 -- ---------------------------------------------------------------------------
-CREATE INDEX idx_jobs_status_deadline
+CREATE INDEX idx_jobs_stale_deadline
     ON jobs (deadline_at)
-    WHERE timed_out = FALSE AND status NOT IN ('COMPLETED', 'DEAD_LETTER');
+    WHERE stale = FALSE AND status NOT IN ('COMPLETED', 'DEAD_LETTER');
 
 CREATE INDEX idx_job_tasks_consumer_eligibility
     ON job_tasks (job_id, status, next_attempt_time)
     WHERE status IN ('PENDING', 'FAILED');
 
-CREATE INDEX idx_job_tasks_deadline_guard
+CREATE INDEX idx_job_tasks_stale_guard
     ON job_tasks (deadline_at)
-    WHERE timed_out = FALSE AND status = 'IN_PROGRESS';
+    WHERE stale = FALSE AND status = 'IN_PROGRESS';
+
+CREATE INDEX idx_job_tasks_retry
+    ON job_tasks (attempt_count ASC, next_attempt_time)
+    WHERE status = 'FAILED' AND next_attempt_time IS NOT NULL;
 
 CREATE INDEX idx_job_tasks_job_id
     ON job_tasks (job_id);

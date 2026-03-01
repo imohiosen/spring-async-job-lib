@@ -21,9 +21,11 @@ import java.util.concurrent.TimeUnit;
  * include {@code WHERE fence_token = ?}, so a stale holder whose lease expired
  * cannot overwrite state written by a newer holder with a higher token.
  *
- * <p><strong>Critical:</strong> All locks use an explicit lease time
- * ({@link LockProperties#leaseTimeMs()}) to ensure the lock is automatically
- * released if the JVM dies before the {@code finally} block can execute.
+ * <h2>Watchdog mode</h2>
+ * <p>When {@link LockProperties#useWatchdog()} is {@code true} (default), the
+ * lock is acquired without an explicit lease time. Redisson's internal watchdog
+ * automatically renews the lock while the owning thread is alive, making it
+ * safe for tasks of unpredictable duration.
  */
 public class TaskLockManager {
 
@@ -41,6 +43,10 @@ public class TaskLockManager {
     /**
      * Attempts to acquire a fenced distributed lock for the given task.
      *
+     * <p>In watchdog mode (default), the lock auto-renews while the owning
+     * thread is alive. In explicit-lease mode, the lock expires after
+     * {@link LockProperties#leaseTimeMs()} milliseconds.
+     *
      * @param taskId task UUID to lock
      * @return a {@link FencedLock} with a monotonically increasing token if the lock was
      *         acquired; {@link Optional#empty()} if another node holds it
@@ -48,13 +54,22 @@ public class TaskLockManager {
     public Optional<FencedLock> tryLock(UUID taskId) {
         RFencedLock lock = redissonClient.getFencedLock(LOCK_PREFIX + taskId);
         try {
-            Long token = lock.tryLockAndGetToken(
-                    props.waitTimeMs(),
-                    props.leaseTimeMs(),
-                    TimeUnit.MILLISECONDS
-            );
+            Long token;
+            if (props.useWatchdog()) {
+                token = lock.tryLockAndGetToken(
+                        props.waitTimeMs(),
+                        TimeUnit.MILLISECONDS
+                );
+            } else {
+                token = lock.tryLockAndGetToken(
+                        props.waitTimeMs(),
+                        props.leaseTimeMs(),
+                        TimeUnit.MILLISECONDS
+                );
+            }
             if (token != null) {
-                log.debug("Fenced lock acquired for task={} token={}", taskId, token);
+                log.debug("Fenced lock acquired for task={} token={} watchdog={}",
+                        taskId, token, props.useWatchdog());
                 return Optional.of(new FencedLock(token));
             } else {
                 log.debug("Lock NOT acquired for task={} (held by another node)", taskId);

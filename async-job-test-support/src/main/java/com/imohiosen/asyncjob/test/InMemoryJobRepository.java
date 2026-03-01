@@ -15,7 +15,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class InMemoryJobRepository extends JobRepository {
 
     private final Map<UUID, Job> store = new ConcurrentHashMap<>();
-    private int timedOutJobsCount = 0;
+    private int staleJobsCount = 0;
 
     public InMemoryJobRepository() {
         super(null);
@@ -36,7 +36,7 @@ public class InMemoryJobRepository extends JobRepository {
         store.computeIfPresent(id, (k, j) -> new Job(
                 j.id(), j.jobName(), j.correlationId(), status,
                 j.createdAt(), j.updatedAt(), j.startedAt(), j.completedAt(),
-                j.deadlineAt(), j.timedOut(), j.totalTasks(), j.pendingTasks(),
+                j.deadlineAt(), j.stale(), j.totalTasks(), j.pendingTasks(),
                 j.inProgressTasks(), j.completedTasks(), j.failedTasks(),
                 j.deadLetterTasks(), j.metadata()
         ));
@@ -53,14 +53,14 @@ public class InMemoryJobRepository extends JobRepository {
     }
 
     @Override
-    public int flagTimedOutJobs() {
-        return timedOutJobsCount;
+    public int flagStaleJobs() {
+        return staleJobsCount;
     }
 
     // ── Test helpers ─────────────────────────────────────────────────────────
 
-    public void setTimedOutJobsCount(int count) {
-        this.timedOutJobsCount = count;
+    public void setStaleJobsCount(int count) {
+        this.staleJobsCount = count;
     }
 
     public Collection<Job> all() {

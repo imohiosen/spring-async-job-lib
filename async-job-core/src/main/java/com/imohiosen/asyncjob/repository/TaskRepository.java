@@ -28,14 +28,14 @@ public class TaskRepository {
     public void insert(JobTask task) {
         jdbc.update("""
                 INSERT INTO job_tasks (id, job_id, task_type, kafka_topic, status,
-                    created_at, updated_at, deadline_at, timed_out,
+                    created_at, updated_at, deadline_at, stale,
                     attempt_count, base_interval_ms, multiplier, max_delay_ms, payload)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb)
                 """,
-                task.id(), task.jobId(), task.taskType(), task.kafkaTopic(),
+                task.id().toString(), task.jobId().toString(), task.taskType(), task.kafkaTopic(),
                 task.status().name(),
                 toTimestamp(task.createdAt()), toTimestamp(task.updatedAt()),
-                toTimestamp(task.deadlineAt()), task.timedOut(),
+                toTimestamp(task.deadlineAt()), task.stale(),
                 task.attemptCount(),
                 task.baseIntervalMs(), task.multiplier(), task.maxDelayMs(),
                 task.payload());
@@ -52,13 +52,13 @@ public class TaskRepository {
                 WHERE id = ?
                   AND status IN ('PENDING', 'FAILED')
                   AND (next_attempt_time IS NULL OR next_attempt_time <= NOW())
-                """, new TaskRowMapper(), taskId);
+                """, new TaskRowMapper(), taskId.toString());
         return results.stream().findFirst();
     }
 
     public Optional<JobTask> findById(UUID taskId) {
         List<JobTask> results = jdbc.query(
-                "SELECT * FROM job_tasks WHERE id = ?", new TaskRowMapper(), taskId);
+                "SELECT * FROM job_tasks WHERE id = ?", new TaskRowMapper(), taskId.toString());
         return results.stream().findFirst();
     }
 
@@ -68,21 +68,21 @@ public class TaskRepository {
                 SET status = 'IN_PROGRESS', started_at = ?, attempt_count = attempt_count + 1,
                     last_attempt_time = NOW(), fence_token = ?, updated_at = NOW()
                 WHERE id = ?
-                """, toTimestamp(startedAt), fenceToken, taskId);
+                """, toTimestamp(startedAt), fenceToken, taskId.toString());
     }
 
     public void recordAsyncSubmitted(UUID taskId, OffsetDateTime submittedAt, long fenceToken) {
         jdbc.update("""
                 UPDATE job_tasks SET async_submitted_at = ?, updated_at = NOW()
                 WHERE id = ? AND fence_token = ?
-                """, toTimestamp(submittedAt), taskId, fenceToken);
+                """, toTimestamp(submittedAt), taskId.toString(), fenceToken);
     }
 
     public void recordAsyncCompleted(UUID taskId, OffsetDateTime completedAt, long fenceToken) {
         jdbc.update("""
                 UPDATE job_tasks SET async_completed_at = ?, updated_at = NOW()
                 WHERE id = ? AND fence_token = ?
-                """, toTimestamp(completedAt), taskId, fenceToken);
+                """, toTimestamp(completedAt), taskId.toString(), fenceToken);
     }
 
     public boolean markCompleted(UUID taskId, String result, OffsetDateTime completedAt, long fenceToken) {
@@ -91,7 +91,7 @@ public class TaskRepository {
                 SET status = 'COMPLETED', completed_at = ?, result = ?::jsonb,
                     last_error_message = NULL, last_error_class = NULL, updated_at = NOW()
                 WHERE id = ? AND fence_token = ?
-                """, toTimestamp(completedAt), result, taskId, fenceToken);
+                """, toTimestamp(completedAt), result, taskId.toString(), fenceToken);
         return rows > 0;
     }
 
@@ -106,7 +106,7 @@ public class TaskRepository {
                 WHERE id = ? AND fence_token = ?
                 """,
                 attemptCount, toTimestamp(lastAttemptTime),
-                toTimestamp(nextAttemptTime), errorMessage, errorClass, taskId, fenceToken);
+                toTimestamp(nextAttemptTime), errorMessage, errorClass, taskId.toString(), fenceToken);
         return rows > 0;
     }
 
@@ -119,33 +119,49 @@ public class TaskRepository {
                     updated_at = NOW()
                 WHERE id = ? AND fence_token = ?
                 """,
-                attemptCount, toTimestamp(lastAttemptTime), errorMessage, errorClass, taskId, fenceToken);
+                attemptCount, toTimestamp(lastAttemptTime), errorMessage, errorClass, taskId.toString(), fenceToken);
         return rows > 0;
     }
 
     /**
-     * Flags all IN_PROGRESS tasks that have breached their deadline.
+     * Flags all IN_PROGRESS tasks that have breached their deadline as stale.
+     * Does NOT change the task's status — the handler runs to completion.
      *
-     * @return number of tasks flagged
+     * @return number of tasks flagged stale
      */
-    public int flagTimedOutTasks() {
+    public int flagStaleTasks() {
         return jdbc.update("""
                 UPDATE job_tasks
-                SET timed_out = TRUE, status = 'FAILED',
-                    last_error_message = 'Task deadline exceeded',
-                    last_error_class = 'com.imohiosen.asyncjob.exception.TaskDeadlineExceededException',
-                    updated_at = NOW()
+                SET stale = TRUE, updated_at = NOW()
                 WHERE deadline_at < NOW()
-                  AND timed_out = FALSE
+                  AND stale = FALSE
                   AND status = 'IN_PROGRESS'
                 """);
+    }
+
+    /**
+     * Finds failed tasks eligible for retry, ordered by attempt count ascending
+     * so that tasks with fewer attempts are prioritised.
+     *
+     * @param limit maximum number of tasks to return
+     * @return retryable tasks ordered by attempt_count ASC, next_attempt_time ASC
+     */
+    public List<JobTask> findRetryableTasks(int limit) {
+        return jdbc.query("""
+                SELECT * FROM job_tasks
+                WHERE status = 'FAILED'
+                  AND next_attempt_time IS NOT NULL
+                  AND next_attempt_time <= NOW()
+                ORDER BY attempt_count ASC, next_attempt_time ASC
+                LIMIT ?
+                """, new TaskRowMapper(), limit);
     }
 
     public List<JobTask> findDeadLetterByJobId(UUID jobId) {
         return jdbc.query("""
                 SELECT * FROM job_tasks WHERE job_id = ? AND status = 'DEAD_LETTER'
                 ORDER BY updated_at DESC
-                """, new TaskRowMapper(), jobId);
+                """, new TaskRowMapper(), jobId.toString());
     }
 
     private static Timestamp toTimestamp(OffsetDateTime odt) {
@@ -170,7 +186,7 @@ public class TaskRepository {
                     toOdt(rs.getTimestamp("started_at")),
                     toOdt(rs.getTimestamp("completed_at")),
                     toOdt(rs.getTimestamp("deadline_at")),
-                    rs.getBoolean("timed_out"),
+                    rs.getBoolean("stale"),
                     rs.getInt("attempt_count"),
                     toOdt(rs.getTimestamp("last_attempt_time")),
                     toOdt(rs.getTimestamp("next_attempt_time")),

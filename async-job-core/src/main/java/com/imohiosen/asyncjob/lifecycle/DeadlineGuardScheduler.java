@@ -8,8 +8,12 @@ import org.springframework.scheduling.annotation.Scheduled;
 
 /**
  * Periodically sweeps the database for jobs and tasks that have breached
- * their {@code deadline_at} without reaching a terminal state, and flags
- * them as timed out.
+ * their {@code deadline_at} and flags them as <strong>stale</strong>.
+ *
+ * <p>Stale-flagging is <strong>informational only</strong> — it does not
+ * change the task's status or interrupt processing. The consumer continues
+ * to run the task to completion, and the final result is always persisted.
+ * Downstream systems can query the {@code stale} column for SLA reporting.
  *
  * <p>Registered as a Spring bean via {@code AsyncJobLibraryConfig}.
  * The sweep interval is configurable via {@code asyncjob.deadline.sweep-interval-ms}.
@@ -28,23 +32,23 @@ public class DeadlineGuardScheduler {
     }
 
     /**
-     * Runs on the configured interval. Both UPDATE statements execute in a single
-     * transaction to avoid partial flagging.
+     * Runs on the configured interval. Flags stale jobs and tasks without
+     * changing their status — the handlers are left to run to completion.
      *
      * <p>Configured via: {@code asyncjob.deadline.sweep-interval-ms} (default: 30000ms)
      */
     @Scheduled(fixedDelayString = "${asyncjob.deadline.sweep-interval-ms:30000}")
     public void sweep() {
-        log.debug("Deadline guard sweep starting");
+        log.debug("Stale guard sweep starting");
 
-        int timedOutJobs  = jobRepository.flagTimedOutJobs();
-        int timedOutTasks = taskRepository.flagTimedOutTasks();
+        int staleJobs  = jobRepository.flagStaleJobs();
+        int staleTasks = taskRepository.flagStaleTasks();
 
-        if (timedOutJobs > 0 || timedOutTasks > 0) {
-            log.warn("Deadline guard flagged {} job(s) and {} task(s) as timed out",
-                    timedOutJobs, timedOutTasks);
+        if (staleJobs > 0 || staleTasks > 0) {
+            log.warn("Stale guard flagged {} job(s) and {} task(s) as stale (deadline breached)",
+                    staleJobs, staleTasks);
         } else {
-            log.debug("Deadline guard sweep complete — no violations found");
+            log.debug("Stale guard sweep complete — no breaches found");
         }
     }
 }
