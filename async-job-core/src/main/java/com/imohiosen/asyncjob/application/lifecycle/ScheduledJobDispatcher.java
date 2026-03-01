@@ -35,7 +35,7 @@ public class ScheduledJobDispatcher {
      * Sweeps for scheduled jobs that are due and dispatches them.
      */
     public void sweep() {
-        List<Job> dueJobs = jobRepository.findScheduledJobsDue(batchSize);
+        List<Job> dueJobs = jobRepository.claimScheduledJobsDue(batchSize);
 
         if (dueJobs.isEmpty()) {
             log.debug("Schedule sweep — no due scheduled jobs found");

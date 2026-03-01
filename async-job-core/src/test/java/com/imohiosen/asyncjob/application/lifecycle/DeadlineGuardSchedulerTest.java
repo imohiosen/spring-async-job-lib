@@ -50,4 +50,15 @@ class DeadlineGuardSchedulerTest {
         verify(jobRepository, times(1)).flagStaleJobs();
         verify(taskRepository, times(1)).flagStaleTasks();
     }
+
+    @Test
+    void sweep_onlyStaleTasks_noStaleJobs() {
+        when(jobRepository.flagStaleJobs()).thenReturn(0);
+        when(taskRepository.flagStaleTasks()).thenReturn(3);
+
+        scheduler.sweep();
+
+        verify(jobRepository).flagStaleJobs();
+        verify(taskRepository).flagStaleTasks();
+    }
 }

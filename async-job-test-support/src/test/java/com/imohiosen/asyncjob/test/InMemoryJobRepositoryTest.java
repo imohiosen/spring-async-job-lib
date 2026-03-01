@@ -71,15 +71,40 @@ class InMemoryJobRepositoryTest {
         repository.updateStatus(UUID.randomUUID(), JobStatus.COMPLETED);
     }
 
-    // ── markStarted / markCompleted ──────────────────────────────────────────
+    // ── tryMarkStarted / markCompleted ────────────────────────────────────────
 
     @Test
-    void markStarted_setsStatusToInProgress() {
+    void tryMarkStarted_pendingJob_returnsTrue_setsStatusToInProgress() {
         Job job = job(UUID.randomUUID(), JobStatus.PENDING);
         repository.insert(job);
 
-        repository.markStarted(job.id());
+        boolean result = repository.tryMarkStarted(job.id());
 
+        assertThat(result).isTrue();
+        assertThat(repository.findById(job.id()).orElseThrow().status())
+                .isEqualTo(JobStatus.IN_PROGRESS);
+    }
+
+    @Test
+    void tryMarkStarted_scheduledJob_returnsTrue_setsStatusToInProgress() {
+        Job job = job(UUID.randomUUID(), JobStatus.SCHEDULED);
+        repository.insert(job);
+
+        boolean result = repository.tryMarkStarted(job.id());
+
+        assertThat(result).isTrue();
+        assertThat(repository.findById(job.id()).orElseThrow().status())
+                .isEqualTo(JobStatus.IN_PROGRESS);
+    }
+
+    @Test
+    void tryMarkStarted_alreadyInProgress_returnsFalse() {
+        Job job = job(UUID.randomUUID(), JobStatus.IN_PROGRESS);
+        repository.insert(job);
+
+        boolean result = repository.tryMarkStarted(job.id());
+
+        assertThat(result).isFalse();
         assertThat(repository.findById(job.id()).orElseThrow().status())
                 .isEqualTo(JobStatus.IN_PROGRESS);
     }
@@ -108,63 +133,63 @@ class InMemoryJobRepositoryTest {
         assertThat(repository.flagStaleJobs()).isEqualTo(0);
     }
 
-    // ── findScheduledJobsDue ────────────────────────────────────────────────
+    // ── claimScheduledJobsDue ────────────────────────────────────────────────
 
     @Test
-    void findScheduledJobsDue_returnsDueScheduledJobs() {
+    void claimScheduledJobsDue_returnsDueScheduledJobs() {
         OffsetDateTime now = OffsetDateTime.now();
         Job due = scheduledJob(UUID.randomUUID(), now.minusMinutes(5));
         repository.insert(due);
 
-        List<Job> result = repository.findScheduledJobsDue(10);
+        List<Job> result = repository.claimScheduledJobsDue(10);
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).id()).isEqualTo(due.id());
     }
 
     @Test
-    void findScheduledJobsDue_excludesFutureScheduledJobs() {
+    void claimScheduledJobsDue_excludesFutureScheduledJobs() {
         OffsetDateTime now = OffsetDateTime.now();
         Job future = scheduledJob(UUID.randomUUID(), now.plusHours(1));
         repository.insert(future);
 
-        List<Job> result = repository.findScheduledJobsDue(10);
+        List<Job> result = repository.claimScheduledJobsDue(10);
 
         assertThat(result).isEmpty();
     }
 
     @Test
-    void findScheduledJobsDue_excludesNonScheduledStatus() {
+    void claimScheduledJobsDue_excludesNonScheduledStatus() {
         OffsetDateTime now = OffsetDateTime.now();
         Job pending = job(UUID.randomUUID(), JobStatus.PENDING);
         repository.insert(pending);
 
-        List<Job> result = repository.findScheduledJobsDue(10);
+        List<Job> result = repository.claimScheduledJobsDue(10);
 
         assertThat(result).isEmpty();
     }
 
     @Test
-    void findScheduledJobsDue_respectsLimit() {
+    void claimScheduledJobsDue_respectsLimit() {
         OffsetDateTime now = OffsetDateTime.now();
         for (int i = 0; i < 5; i++) {
             repository.insert(scheduledJob(UUID.randomUUID(), now.minusMinutes(i + 1)));
         }
 
-        List<Job> result = repository.findScheduledJobsDue(3);
+        List<Job> result = repository.claimScheduledJobsDue(3);
 
         assertThat(result).hasSize(3);
     }
 
     @Test
-    void findScheduledJobsDue_orderedByScheduledAt() {
+    void claimScheduledJobsDue_orderedByScheduledAt() {
         OffsetDateTime now = OffsetDateTime.now();
         Job earlier = scheduledJob(UUID.randomUUID(), now.minusMinutes(10));
         Job later = scheduledJob(UUID.randomUUID(), now.minusMinutes(1));
         repository.insert(later);
         repository.insert(earlier);
 
-        List<Job> result = repository.findScheduledJobsDue(10);
+        List<Job> result = repository.claimScheduledJobsDue(10);
 
         assertThat(result).hasSize(2);
         assertThat(result.get(0).id()).isEqualTo(earlier.id());

@@ -22,9 +22,11 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
@@ -322,6 +324,82 @@ class DispatchingJobTaskConsumerTest {
         assertThat(resolved.maxDelayMs()).isEqualTo(3_600_000L);
     }
 
+    // ── Time-critical dispatching ─────────────────────────────────────────────
+
+    @Test
+    void submitTimeCriticalWork_noExecutorConfigured_fallsBackToNormalSubmit() throws Exception {
+        JobTaskHandler handler = stubHandler("TC_TYPE", TaskResult.success("{}"));
+        JobTaskHandlerRegistry registry = new JobTaskHandlerRegistry(List.of(handler));
+        consumer = new DispatchingJobTaskConsumer(
+                taskRepository, jobRepository, lockManager, bridge, registry);
+        // No TimeCriticalResilienceExecutor passed
+
+        JobTask task = buildTimeCriticalTask(taskId, jobId, "TC_TYPE", TaskStatus.PENDING, 0);
+
+        when(lockManager.tryLock(taskId)).thenReturn(Optional.of(new FencedLock(8L)));
+        when(taskRepository.findEligible(taskId)).thenReturn(Optional.of(task));
+        when(taskRepository.markCompleted(eq(taskId), any(), any(), eq(8L))).thenReturn(true);
+        when(bridge.submitAsync(any())).thenReturn(
+                CompletableFuture.completedFuture(TaskResult.success("{}")));
+
+        consumer.consume(new JobMessage(taskId, jobId, "TC_TYPE", "{}"));
+
+        // Falls back to normal submitWork → bridge.submitAsync
+        verify(bridge).submitAsync(any());
+    }
+
+    @Test
+    void submitTimeCriticalWork_withExecutor_delegatesToResilienceExecutor() throws Exception {
+        TimeCriticalResilienceExecutor tcExecutor = mock(TimeCriticalResilienceExecutor.class);
+        when(tcExecutor.execute(any(), anyLong(), any())).thenReturn(TaskResult.success("{}"));
+
+        // Use a real single-thread executor so CompletableFuture.supplyAsync actually runs
+        ExecutorService handlerExec = java.util.concurrent.Executors.newSingleThreadExecutor();
+        try {
+            JobTaskHandler handler = new JobTaskHandler() {
+                @Override public String taskType() { return "TC_TYPE"; }
+                @Override public TaskResult handle(JobTask task) { return TaskResult.success("{}"); }
+                @Override public ExecutorService executor() { return handlerExec; }
+            };
+            JobTaskHandlerRegistry registry = new JobTaskHandlerRegistry(List.of(handler));
+            consumer = new DispatchingJobTaskConsumer(
+                    taskRepository, jobRepository, lockManager, bridge, registry, tcExecutor);
+
+            JobTask task = buildTimeCriticalTask(taskId, jobId, "TC_TYPE", TaskStatus.PENDING, 0);
+
+            when(lockManager.tryLock(taskId)).thenReturn(Optional.of(new FencedLock(8L)));
+            when(taskRepository.findEligible(taskId)).thenReturn(Optional.of(task));
+            when(taskRepository.markCompleted(eq(taskId), any(), any(), eq(8L))).thenReturn(true);
+
+            consumer.consume(new JobMessage(taskId, jobId, "TC_TYPE", "{}"));
+
+            verify(tcExecutor).execute(any(), eq(8L), any());
+        } finally {
+            handlerExec.shutdownNow();
+        }
+    }
+
+    @Test
+    void submitTimeCriticalWork_withExecutor_noHandler_fallsBackToNormalSubmit() throws Exception {
+        TimeCriticalResilienceExecutor tcExecutor = mock(TimeCriticalResilienceExecutor.class);
+        JobTaskHandlerRegistry registry = new JobTaskHandlerRegistry(List.of());
+        consumer = new DispatchingJobTaskConsumer(
+                taskRepository, jobRepository, lockManager, bridge, registry, tcExecutor);
+
+        JobTask task = buildTimeCriticalTask(taskId, jobId, "UNKNOWN", TaskStatus.PENDING, 0);
+
+        when(lockManager.tryLock(taskId)).thenReturn(Optional.of(new FencedLock(8L)));
+        when(taskRepository.findEligible(taskId)).thenReturn(Optional.of(task));
+        when(taskRepository.markCompleted(eq(taskId), any(), any(), eq(8L))).thenReturn(true);
+        when(bridge.submitAsync(any())).thenReturn(
+                CompletableFuture.completedFuture(TaskResult.success("{}")));
+
+        consumer.consume(new JobMessage(taskId, jobId, "UNKNOWN", "{}"));
+
+        verify(bridge).submitAsync(any());
+        verify(tcExecutor, never()).execute(any(), anyLong(), any());
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private JobTask buildTask(UUID taskId, UUID jobId, String taskType,
@@ -344,5 +422,20 @@ class DispatchingJobTaskConsumerTest {
             @Override public String taskType() { return taskType; }
             @Override public TaskResult handle(JobTask task) { return result; }
         };
+    }
+
+    private JobTask buildTimeCriticalTask(UUID taskId, UUID jobId, String taskType,
+                              TaskStatus status, int attemptCount) {
+        OffsetDateTime now = OffsetDateTime.now();
+        return new JobTask(
+                taskId, jobId, taskType, "test-topic",
+                null, null, status,
+                now, now, null, null,
+                now.plusHours(1), false,
+                attemptCount, null, null,
+                1_000L, 2.0, 3_600_000L,
+                null, null, null, null, null, "{}", null,
+                true, 10, 100L, 1.5, 900L, 2000L
+        );
     }
 }

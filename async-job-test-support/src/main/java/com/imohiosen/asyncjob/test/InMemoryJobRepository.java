@@ -40,8 +40,14 @@ public class InMemoryJobRepository implements JobRepository {
     }
 
     @Override
-    public void markStarted(UUID id) {
+    public boolean tryMarkStarted(UUID id) {
+        Job existing = store.get(id);
+        if (existing == null) return false;
+        if (existing.status() != JobStatus.PENDING && existing.status() != JobStatus.SCHEDULED) {
+            return false;
+        }
         updateStatus(id, JobStatus.IN_PROGRESS);
+        return true;
     }
 
     @Override
@@ -60,7 +66,7 @@ public class InMemoryJobRepository implements JobRepository {
     }
 
     @Override
-    public List<Job> findScheduledJobsDue(int limit) {
+    public List<Job> claimScheduledJobsDue(int limit) {
         OffsetDateTime now = OffsetDateTime.now();
         return store.values().stream()
                 .filter(j -> j.status() == JobStatus.SCHEDULED)

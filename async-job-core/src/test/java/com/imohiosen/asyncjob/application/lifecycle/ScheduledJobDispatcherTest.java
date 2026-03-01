@@ -36,7 +36,7 @@ class ScheduledJobDispatcherTest {
         UUID jobId = UUID.randomUUID();
         Job job = dueJob(jobId, now);
 
-        when(jobRepository.findScheduledJobsDue(50)).thenReturn(List.of(job));
+        when(jobRepository.claimScheduledJobsDue(50)).thenReturn(List.of(job));
         when(submissionService.dispatch(job)).thenReturn(2);
 
         dispatcher.sweep();
@@ -50,7 +50,7 @@ class ScheduledJobDispatcherTest {
         Job job1 = dueJob(UUID.randomUUID(), now);
         Job job2 = dueJob(UUID.randomUUID(), now);
 
-        when(jobRepository.findScheduledJobsDue(50)).thenReturn(List.of(job1, job2));
+        when(jobRepository.claimScheduledJobsDue(50)).thenReturn(List.of(job1, job2));
         when(submissionService.dispatch(any(Job.class))).thenReturn(1);
 
         dispatcher.sweep();
@@ -61,7 +61,7 @@ class ScheduledJobDispatcherTest {
 
     @Test
     void sweep_doesNothingWhenNoScheduledJobs() {
-        when(jobRepository.findScheduledJobsDue(50)).thenReturn(List.of());
+        when(jobRepository.claimScheduledJobsDue(50)).thenReturn(List.of());
 
         dispatcher.sweep();
 
@@ -72,13 +72,13 @@ class ScheduledJobDispatcherTest {
     void sweep_respectsBatchSize() {
         ScheduledJobDispatcher smallBatch = new ScheduledJobDispatcher(jobRepository, submissionService, 5);
 
-        when(jobRepository.findScheduledJobsDue(5)).thenReturn(List.of());
+        when(jobRepository.claimScheduledJobsDue(5)).thenReturn(List.of());
 
         smallBatch.sweep();
 
         // Verify the batch size was passed through
-        verify(jobRepository).findScheduledJobsDue(5);
-        verify(jobRepository, never()).findScheduledJobsDue(50);
+        verify(jobRepository).claimScheduledJobsDue(5);
+        verify(jobRepository, never()).claimScheduledJobsDue(50);
     }
 
     @Test
@@ -87,7 +87,7 @@ class ScheduledJobDispatcherTest {
         Job job1 = dueJob(UUID.randomUUID(), now);
         Job job2 = dueJob(UUID.randomUUID(), now);
 
-        when(jobRepository.findScheduledJobsDue(50)).thenReturn(List.of(job1, job2));
+        when(jobRepository.claimScheduledJobsDue(50)).thenReturn(List.of(job1, job2));
         when(submissionService.dispatch(job1)).thenThrow(new RuntimeException("boom"));
         when(submissionService.dispatch(job2)).thenReturn(1);
 

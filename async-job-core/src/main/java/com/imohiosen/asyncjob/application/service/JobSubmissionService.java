@@ -127,7 +127,7 @@ public class JobSubmissionService {
         // 4. Update counters and set status
         jobRepository.updateCounters(jobId);
         if (immediate) {
-            jobRepository.markStarted(jobId);
+            jobRepository.tryMarkStarted(jobId);
             log.info("Job={} started immediately with {} tasks", jobId, produced);
         } else {
             log.info("Job={} scheduled for {} with {} tasks", jobId, request.scheduledAt(), produced);
@@ -161,7 +161,7 @@ public class JobSubmissionService {
             published++;
         }
 
-        jobRepository.markStarted(job.id());
+        jobRepository.tryMarkStarted(job.id());
         log.info("Dispatched {} tasks for scheduled job={}", published, job.id());
         return published;
     }

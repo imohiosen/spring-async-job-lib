@@ -228,7 +228,7 @@ public class JdbcTaskRepository implements TaskRepository {
     }
 
     @Override
-    public List<JobTask> findRetryableTasks(int limit) {
+    public List<JobTask> claimRetryableTasks(int limit) {
         String sql = """
                 SELECT * FROM job_tasks
                 WHERE status = 'FAILED'
@@ -236,13 +236,19 @@ public class JdbcTaskRepository implements TaskRepository {
                   AND next_attempt_time <= NOW()
                 ORDER BY attempt_count ASC, next_attempt_time ASC
                 LIMIT ?
+                FOR UPDATE SKIP LOCKED
                 """;
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setInt(1, limit);
-            return queryList(ps);
+        try (Connection conn = dataSource.getConnection()) {
+            conn.setAutoCommit(false);
+            try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                ps.setInt(1, limit);
+                return queryList(ps);
+            } finally {
+                conn.commit();
+                conn.setAutoCommit(true);
+            }
         } catch (SQLException e) {
-            throw new RuntimeException("Failed to find retryable tasks", e);
+            throw new RuntimeException("Failed to claim retryable tasks", e);
         }
     }
 

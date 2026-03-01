@@ -42,7 +42,7 @@ public class TaskRetryScheduler {
      * so lower-attempt tasks are prioritised.
      */
     public void sweep() {
-        List<JobTask> retryable = taskRepository.findRetryableTasks(batchSize);
+        List<JobTask> retryable = taskRepository.claimRetryableTasks(batchSize);
 
         if (retryable.isEmpty()) {
             log.debug("Retry sweep — no retryable tasks found");

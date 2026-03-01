@@ -178,7 +178,7 @@ public class InMemoryTaskRepository implements TaskRepository {
     }
 
     @Override
-    public List<JobTask> findRetryableTasks(int limit) {
+    public List<JobTask> claimRetryableTasks(int limit) {
         return store.values().stream()
                 .filter(t -> t.status() == TaskStatus.FAILED)
                 .filter(t -> t.nextAttemptTime() != null && !t.nextAttemptTime().isAfter(OffsetDateTime.now()))

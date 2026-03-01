@@ -242,6 +242,98 @@ class TimeCriticalResilienceExecutorTest {
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
+    private JobTask buildNonTimeCriticalTask(UUID taskId, UUID jobId) {
+        OffsetDateTime now = OffsetDateTime.now();
+        return new JobTask(
+                taskId, jobId, "TEST", "test-topic",
+                null, null, TaskStatus.PENDING,
+                now, now, null, null,
+                now.plusHours(1), false,
+                0, null, null,
+                1_000L, 2.0, 3_600_000L,
+                null, null, null, null, null, "{}", null,
+                false, 0, 0L, 1.0, 0L, 0L
+        );
+    }
+
+    @Test
+    void execute_nonTimeCriticalTask_throwsIllegalState() {
+        JobTask task = buildNonTimeCriticalTask(taskId, jobId);
+        JobTaskHandler handler = stubHandler(TaskResult.success("{}"));
+
+        assertThatThrownBy(() -> executor.execute(task, fenceToken, handler))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("not time-critical");
+    }
+
+    @Test
+    void execute_handlerReturnsNull_treatedAsNpe() {
+        TimeCriticalPolicy policy = new TimeCriticalPolicy(2, 10L, 1.0, 50L, 60_000L);
+        JobTask task = buildTimeCriticalTask(taskId, jobId, 0, policy);
+        JobTaskHandler handler = new JobTaskHandler() {
+            @Override public String taskType() { return "TEST"; }
+            @Override public TaskResult handle(JobTask t) { return null; }
+        };
+
+        when(taskRepository.persistTimeCriticalProgress(
+                any(), anyInt(), any(), anyString(), anyString(), anyLong()))
+                .thenReturn(true);
+
+        assertThatThrownBy(() -> executor.execute(task, fenceToken, handler))
+                .isInstanceOf(TimeCriticalRetriesExhaustedException.class);
+    }
+
+    @Test
+    void execute_resultBasedExhaustion_flushesAndThrows() {
+        // Handler always returns failure result (not exception) — tests the
+        // "result.isSuccess() == false" branch after retry.executeCallable()
+        TimeCriticalPolicy policy = new TimeCriticalPolicy(2, 10L, 1.0, 50L, 60_000L);
+        JobTask task = buildTimeCriticalTask(taskId, jobId, 0, policy);
+        JobTaskHandler handler = new JobTaskHandler() {
+            @Override public String taskType() { return "TEST"; }
+            @Override public TaskResult handle(JobTask t) {
+                return TaskResult.failure(new RuntimeException("result-fail"));
+            }
+        };
+
+        when(taskRepository.persistTimeCriticalProgress(
+                any(), anyInt(), any(), anyString(), anyString(), anyLong()))
+                .thenReturn(true);
+
+        assertThatThrownBy(() -> executor.execute(task, fenceToken, handler))
+                .isInstanceOf(TimeCriticalRetriesExhaustedException.class);
+
+        // Final progress should have been flushed
+        verify(taskRepository, atLeastOnce()).persistTimeCriticalProgress(
+                eq(taskId), anyInt(), any(), anyString(), anyString(), eq(fenceToken));
+    }
+
+    @Test
+    void execute_periodicSyncSkipsWhenNoNewAttempts() throws Exception {
+        // Use a sync interval shorter than the handler execution time
+        // so the sync fires while the handler is "working" (sleeping)
+        TimeCriticalPolicy policy = new TimeCriticalPolicy(2, 200L, 1.0, 200L, 20L);
+        JobTask task = buildTimeCriticalTask(taskId, jobId, 0, policy);
+        // First call succeeds immediately — no retries, so attemptsSinceLastSync stays 0
+        // But the periodic sync fires quickly (every 20ms) and should skip
+        JobTaskHandler handler = new JobTaskHandler() {
+            @Override public String taskType() { return "TEST"; }
+            @Override public TaskResult handle(JobTask t) {
+                try { Thread.sleep(80); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+                return TaskResult.success("{}");
+            }
+        };
+
+        TaskResult result = executor.execute(task, fenceToken, handler);
+
+        assertThat(result.isSuccess()).isTrue();
+        // Periodic sync should NOT have written because attemptsSinceLastSync == 0
+        verify(taskRepository, never()).persistTimeCriticalProgress(
+                any(), anyInt(), any(), anyString(), anyString(), anyLong());
+    }
+
+    // ── Original Helpers ─────────────────────────────────────────────────────
+
     private JobTask buildTimeCriticalTask(UUID taskId, UUID jobId, int attemptCount) {
         return buildTimeCriticalTask(taskId, jobId, attemptCount, TimeCriticalPolicy.DEFAULT);
     }

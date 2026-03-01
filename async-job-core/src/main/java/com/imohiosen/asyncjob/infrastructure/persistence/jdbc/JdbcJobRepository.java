@@ -90,15 +90,16 @@ public class JdbcJobRepository implements JobRepository {
     }
 
     @Override
-    public void markStarted(UUID id) {
+    public boolean tryMarkStarted(UUID id) {
         String sql = """
                 UPDATE jobs SET status = 'IN_PROGRESS', started_at = NOW(), updated_at = NOW()
                 WHERE id = ?
+                  AND status IN ('PENDING', 'SCHEDULED')
                 """;
         try (Connection conn = dataSource.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, id.toString());
-            ps.executeUpdate();
+            return ps.executeUpdate() > 0;
         } catch (SQLException e) {
             throw new RuntimeException("Failed to mark job started " + id, e);
         }
@@ -157,7 +158,7 @@ public class JdbcJobRepository implements JobRepository {
     }
 
     @Override
-    public List<Job> findScheduledJobsDue(int limit) {
+    public List<Job> claimScheduledJobsDue(int limit) {
         String sql = """
                 SELECT * FROM jobs
                 WHERE status = 'SCHEDULED'
@@ -165,19 +166,25 @@ public class JdbcJobRepository implements JobRepository {
                   AND scheduled_at <= NOW()
                 ORDER BY scheduled_at ASC
                 LIMIT ?
+                FOR UPDATE SKIP LOCKED
                 """;
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setInt(1, limit);
-            try (ResultSet rs = ps.executeQuery()) {
-                List<Job> results = new ArrayList<>();
-                while (rs.next()) {
-                    results.add(mapRow(rs));
+        try (Connection conn = dataSource.getConnection()) {
+            conn.setAutoCommit(false);
+            try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                ps.setInt(1, limit);
+                try (ResultSet rs = ps.executeQuery()) {
+                    List<Job> results = new ArrayList<>();
+                    while (rs.next()) {
+                        results.add(mapRow(rs));
+                    }
+                    return results;
                 }
-                return results;
+            } finally {
+                conn.commit();
+                conn.setAutoCommit(true);
             }
         } catch (SQLException e) {
-            throw new RuntimeException("Failed to find scheduled jobs due", e);
+            throw new RuntimeException("Failed to claim scheduled jobs due", e);
         }
     }
 

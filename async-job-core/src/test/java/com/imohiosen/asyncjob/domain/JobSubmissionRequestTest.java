@@ -104,4 +104,29 @@ class JobSubmissionRequestTest {
                 List.of(), 60_000L, 15_000L, null, null, null, null, false, null);
         assertThat(request.effectiveTaskDeadlineMs()).isEqualTo(15_000L);
     }
+
+    @Test
+    void effectiveTimeCriticalPolicy_whenTimeCriticalTrue_withExplicitPolicy_returnsExplicit() {
+        TimeCriticalPolicy custom = new TimeCriticalPolicy(5, 50L, 2.0, 500L, 1000L);
+        JobSubmissionRequest request = new JobSubmissionRequest(
+                "test-job", "test-topic", "TEST_TYPE",
+                List.of(), 60_000L, null, null, null, null, null, true, custom);
+        assertThat(request.effectiveTimeCriticalPolicy()).isSameAs(custom);
+    }
+
+    @Test
+    void effectiveTimeCriticalPolicy_whenTimeCriticalTrue_withNullPolicy_returnsDefault() {
+        JobSubmissionRequest request = new JobSubmissionRequest(
+                "test-job", "test-topic", "TEST_TYPE",
+                List.of(), 60_000L, null, null, null, null, null, true, null);
+        assertThat(request.effectiveTimeCriticalPolicy()).isEqualTo(TimeCriticalPolicy.DEFAULT);
+    }
+
+    @Test
+    void effectiveTimeCriticalPolicy_whenTimeCriticalFalse_returnsNull() {
+        JobSubmissionRequest request = new JobSubmissionRequest(
+                "test-job", "test-topic", "TEST_TYPE",
+                List.of(), 60_000L, null, null, null, null, null, false, null);
+        assertThat(request.effectiveTimeCriticalPolicy()).isNull();
+    }
 }

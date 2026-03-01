@@ -36,7 +36,7 @@ class TaskRetrySchedulerTest {
 
     @Test
     void sweep_noRetryableTasks_doesNotPublish() {
-        when(taskRepository.findRetryableTasks(100)).thenReturn(List.of());
+        when(taskRepository.claimRetryableTasks(100)).thenReturn(List.of());
 
         scheduler.sweep();
 
@@ -49,7 +49,7 @@ class TaskRetrySchedulerTest {
         JobTask task1 = retryableTask(jobId, "topic-a");
         JobTask task2 = retryableTask(jobId, "topic-b");
 
-        when(taskRepository.findRetryableTasks(100)).thenReturn(List.of(task1, task2));
+        when(taskRepository.claimRetryableTasks(100)).thenReturn(List.of(task1, task2));
 
         scheduler.sweep();
 
@@ -62,7 +62,7 @@ class TaskRetrySchedulerTest {
         UUID jobId = UUID.randomUUID();
         JobTask task = retryableTask(jobId, "my-topic");
 
-        when(taskRepository.findRetryableTasks(100)).thenReturn(List.of(task));
+        when(taskRepository.claimRetryableTasks(100)).thenReturn(List.of(task));
 
         scheduler.sweep();
 
@@ -82,7 +82,7 @@ class TaskRetrySchedulerTest {
         JobTask task1 = retryableTask(jobId, "topic");
         JobTask task2 = retryableTask(jobId, "topic");
 
-        when(taskRepository.findRetryableTasks(100)).thenReturn(List.of(task1, task2));
+        when(taskRepository.claimRetryableTasks(100)).thenReturn(List.of(task1, task2));
         doThrow(new RuntimeException("broker down"))
                 .when(messageProducer).publish(eq("topic"), argThat(m -> m.taskId().equals(task1.id())));
 
@@ -95,12 +95,12 @@ class TaskRetrySchedulerTest {
     @Test
     void sweep_respectsBatchSize() {
         TaskRetryScheduler smallBatch = new TaskRetryScheduler(taskRepository, messageProducer, 10);
-        when(taskRepository.findRetryableTasks(10)).thenReturn(List.of());
+        when(taskRepository.claimRetryableTasks(10)).thenReturn(List.of());
 
         smallBatch.sweep();
 
-        verify(taskRepository).findRetryableTasks(10);
-        verify(taskRepository, never()).findRetryableTasks(100);
+        verify(taskRepository).claimRetryableTasks(10);
+        verify(taskRepository, never()).claimRetryableTasks(100);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

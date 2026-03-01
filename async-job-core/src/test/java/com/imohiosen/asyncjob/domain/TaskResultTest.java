@@ -42,4 +42,16 @@ class TaskResultTest {
         };
         assertThat(output).isEqualTo("failure:oops");
     }
+
+    @Test
+    void failure_payload_returnsNull() {
+        TaskResult result = TaskResult.failure(new RuntimeException("err"));
+        assertThat(result.payload()).isNull();
+    }
+
+    @Test
+    void success_error_returnsNull() {
+        TaskResult result = TaskResult.success("data");
+        assertThat(result.error()).isNull();
+    }
 }

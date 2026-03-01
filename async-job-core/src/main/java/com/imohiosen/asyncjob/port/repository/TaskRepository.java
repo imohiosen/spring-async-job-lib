@@ -63,12 +63,29 @@ public interface TaskRepository {
     int flagStaleTasks();
 
     /**
-     * Finds failed tasks eligible for retry, ordered by attempt count ascending.
+     * Atomically claims and returns failed tasks eligible for retry.
      *
-     * @param limit maximum number of tasks to return
-     * @return retryable tasks ordered by attempt_count ASC, next_attempt_time ASC
+     * <p><strong>Exclusive-claim contract:</strong> rows returned by this method
+     * must <em>not</em> be returned by any concurrent call from another node or
+     * thread. This prevents duplicate retry messages in multi-instance
+     * deployments.
+     *
+     * <h3>Implementation guidance</h3>
+     * <ul>
+     *   <li><strong>JDBC/SQL (PostgreSQL):</strong>
+     *       {@code SELECT … WHERE status='FAILED' AND next_attempt_time <= NOW()
+     *       ORDER BY attempt_count ASC LIMIT ? FOR UPDATE SKIP LOCKED}</li>
+     *   <li><strong>MongoDB:</strong> loop calling
+     *       {@code findOneAndUpdate({status:'FAILED', nextAttemptTime:{$lte:now}},
+     *       {$set:{status:'RETRY_CLAIMED'}})} up to {@code limit} times</li>
+     *   <li><strong>DynamoDB:</strong> query a GSI on status + nextAttemptTime,
+     *       then conditionally update each item's status</li>
+     * </ul>
+     *
+     * @param limit maximum number of tasks to claim
+     * @return exclusively claimed retryable tasks (disjoint across callers)
      */
-    List<JobTask> findRetryableTasks(int limit);
+    List<JobTask> claimRetryableTasks(int limit);
 
     List<JobTask> findDeadLetterByJobId(UUID jobId);
 

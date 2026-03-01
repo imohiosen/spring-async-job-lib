@@ -123,6 +123,37 @@ class JobTaskTest {
         assertThat(policy.maxDelayMs()).isEqualTo(300_000L);
     }
 
+    @Test
+    void timeCriticalPolicy_whenTimeCritical_returnsPolicy() {
+        OffsetDateTime now = OffsetDateTime.now();
+        JobTask task = new JobTask(
+                UUID.randomUUID(), UUID.randomUUID(), "TEST", "test-topic",
+                null, null, TaskStatus.PENDING, now, now, null, null,
+                now.plusHours(1), false, 0, null, null,
+                1_000L, 2.0, 3_600_000L,
+                null, null, null, null, null, "{}", null,
+                true, 10, 100L, 1.5, 900L, 2000L);
+
+        TimeCriticalPolicy policy = task.timeCriticalPolicy();
+        assertThat(policy).isNotNull();
+        assertThat(policy.maxAttempts()).isEqualTo(10);
+        assertThat(policy.baseIntervalMs()).isEqualTo(100L);
+    }
+
+    @Test
+    void timeCriticalPolicy_whenNotTimeCritical_returnsNull() {
+        OffsetDateTime now = OffsetDateTime.now();
+        JobTask task = new JobTask(
+                UUID.randomUUID(), UUID.randomUUID(), "TEST", "test-topic",
+                null, null, TaskStatus.PENDING, now, now, null, null,
+                now.plusHours(1), false, 0, null, null,
+                1_000L, 2.0, 3_600_000L,
+                null, null, null, null, null, "{}", null,
+                false, 0, 0L, 1.0, 0L, 0L);
+
+        assertThat(task.timeCriticalPolicy()).isNull();
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private static JobTask task(TaskStatus status, OffsetDateTime nextAttemptTime) {

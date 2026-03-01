@@ -215,6 +215,18 @@ class AbstractJobTaskConsumerTest {
         verify(taskRepository).recordAsyncCompleted(eq(taskId), any(), eq(42L));
     }
 
+    @Test
+    void consume_timeCriticalTask_callsSubmitTimeCriticalWork() throws Exception {
+        JobTask tcTask = buildTimeCriticalTask(taskId, jobId, TaskStatus.PENDING);
+        when(lockManager.tryLock(taskId)).thenReturn(Optional.of(new FencedLock(42L)));
+        when(taskRepository.findEligible(taskId)).thenReturn(Optional.of(tcTask));
+        when(taskRepository.markCompleted(eq(taskId), any(), any(), eq(42L))).thenReturn(true);
+
+        consumer.consume(new JobMessage(taskId, jobId, "TEST", "{}"));
+
+        assertThat(consumer.timeCriticalWorkCalled).isTrue();
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private JobTask buildTask(UUID taskId, UUID jobId, TaskStatus status) {
@@ -235,9 +247,25 @@ class AbstractJobTaskConsumerTest {
         );
     }
 
+    private JobTask buildTimeCriticalTask(UUID taskId, UUID jobId, TaskStatus status) {
+        OffsetDateTime now = OffsetDateTime.now();
+        return new JobTask(
+                taskId, jobId, "TEST", "test-topic",
+                null, null, status,
+                now, now, null, null,
+                now.plusHours(1), false,
+                0, null, null,
+                1_000L, 2.0, 3_600_000L,
+                null, null, null, null, null, "{}", null,
+                true, 10, 100L, 1.5, 900L, 2000L
+        );
+    }
+
     // ── Test Double ───────────────────────────────────────────────────────────
 
     static class TestConsumer extends AbstractJobTaskConsumer {
+        boolean timeCriticalWorkCalled = false;
+
         TestConsumer(TaskRepository t, JobRepository j, TaskLockManager l,
                      AsyncTaskExecutorBridge b) {
             super(t, j, l, b);
@@ -248,6 +276,12 @@ class AbstractJobTaskConsumerTest {
         @Override
         protected TaskResult processTask(JobTask task) {
             return TaskResult.success("{}");
+        }
+
+        @Override
+        protected CompletableFuture<TaskResult> submitTimeCriticalWork(JobTask task, long fenceToken) {
+            timeCriticalWorkCalled = true;
+            return CompletableFuture.completedFuture(TaskResult.success("{}"));
         }
     }
 }

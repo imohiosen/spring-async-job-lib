@@ -242,10 +242,10 @@ class InMemoryTaskRepositoryTest {
         assertThat(repository.flagStaleTasks()).isEqualTo(0);
     }
 
-    // ── findRetryableTasks ──────────────────────────────────────────────────
+    // ── claimRetryableTasks ─────────────────────────────────────────────────
 
     @Test
-    void findRetryableTasks_returnsFailedTasksWithPastNextAttemptTime() {
+    void claimRetryableTasks_returnsFailedTasksWithPastNextAttemptTime() {
         UUID jobId = UUID.randomUUID();
         OffsetDateTime now = OffsetDateTime.now();
 
@@ -257,14 +257,14 @@ class InMemoryTaskRepositoryTest {
         repository.insert(notYet);
         repository.insert(completed);
 
-        List<JobTask> result = repository.findRetryableTasks(10);
+        List<JobTask> result = repository.claimRetryableTasks(10);
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).id()).isEqualTo(retryable.id());
     }
 
     @Test
-    void findRetryableTasks_orderedByAttemptCountAsc() {
+    void claimRetryableTasks_orderedByAttemptCountAsc() {
         UUID jobId = UUID.randomUUID();
         OffsetDateTime now = OffsetDateTime.now();
 
@@ -274,14 +274,14 @@ class InMemoryTaskRepositoryTest {
         repository.insert(highAttempts);
         repository.insert(lowAttempts);
 
-        List<JobTask> result = repository.findRetryableTasks(10);
+        List<JobTask> result = repository.claimRetryableTasks(10);
 
         assertThat(result).hasSize(2);
         assertThat(result.get(0).attemptCount()).isLessThanOrEqualTo(result.get(1).attemptCount());
     }
 
     @Test
-    void findRetryableTasks_respectsLimit() {
+    void claimRetryableTasks_respectsLimit() {
         UUID jobId = UUID.randomUUID();
         OffsetDateTime now = OffsetDateTime.now();
 
@@ -289,14 +289,14 @@ class InMemoryTaskRepositoryTest {
             repository.insert(failedTaskWithNextAttempt(UUID.randomUUID(), jobId, now.minusMinutes(i + 1)));
         }
 
-        List<JobTask> result = repository.findRetryableTasks(3);
+        List<JobTask> result = repository.claimRetryableTasks(3);
 
         assertThat(result).hasSize(3);
     }
 
     @Test
-    void findRetryableTasks_emptyWhenNoRetryable() {
-        assertThat(repository.findRetryableTasks(10)).isEmpty();
+    void claimRetryableTasks_emptyWhenNoRetryable() {
+        assertThat(repository.claimRetryableTasks(10)).isEmpty();
     }
 
     // ── findDeadLetterByJobId ───────────────────────────────────────────────

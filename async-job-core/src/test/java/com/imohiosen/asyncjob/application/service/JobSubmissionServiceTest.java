@@ -6,6 +6,7 @@ import com.imohiosen.asyncjob.domain.JobStatus;
 import com.imohiosen.asyncjob.domain.JobSubmissionRequest;
 import com.imohiosen.asyncjob.domain.JobTask;
 import com.imohiosen.asyncjob.domain.TaskStatus;
+import com.imohiosen.asyncjob.domain.TimeCriticalPolicy;
 import com.imohiosen.asyncjob.port.messaging.JobMessage;
 import com.imohiosen.asyncjob.port.messaging.JobMessageProducer;
 import com.imohiosen.asyncjob.port.repository.JobRepository;
@@ -102,7 +103,7 @@ class JobSubmissionServiceTest {
         UUID jobId = service.submit(request);
 
         verify(jobRepository).updateCounters(jobId);
-        verify(jobRepository).markStarted(jobId);
+        verify(jobRepository).tryMarkStarted(jobId);
     }
 
     @Test
@@ -117,7 +118,7 @@ class JobSubmissionServiceTest {
 
         // Should behave as immediate — publish messages and mark started
         verify(messageProducer, times(1)).publish(eq("test-topic"), any(JobMessage.class));
-        verify(jobRepository).markStarted(jobId);
+        verify(jobRepository).tryMarkStarted(jobId);
     }
 
     @Test
@@ -234,7 +235,7 @@ class JobSubmissionServiceTest {
         UUID jobId = service.submit(request);
 
         verify(jobRepository).updateCounters(jobId);
-        verify(jobRepository, never()).markStarted(any());
+        verify(jobRepository, never()).tryMarkStarted(any());
     }
 
     // ── Dispatch ─────────────────────────────────────────────────────────────
@@ -262,7 +263,7 @@ class JobSubmissionServiceTest {
 
         assertThat(published).isEqualTo(2);
         verify(messageProducer, times(2)).publish(eq("topic"), any(JobMessage.class));
-        verify(jobRepository).markStarted(jobId);
+        verify(jobRepository).tryMarkStarted(jobId);
     }
 
     @Test
@@ -285,7 +286,28 @@ class JobSubmissionServiceTest {
 
         assertThat(published).isEqualTo(0);
         verify(messageProducer, never()).publish(any(), any());
-        verify(jobRepository).markStarted(jobId);
+        verify(jobRepository).tryMarkStarted(jobId);
+    }
+
+    @Test
+    void submit_timeCriticalRequest_setsTimeCriticalFieldsOnTasks() {
+        TimeCriticalPolicy tcPolicy = new TimeCriticalPolicy(8, 200L, 1.5, 800L, 3000L);
+        JobSubmissionRequest request = new JobSubmissionRequest(
+                "tc-job", "test-topic", "TEST_TYPE",
+                List.of("{\"id\":1}"),
+                60_000L, null, null, null, null, null, true, tcPolicy);
+
+        service.submit(request);
+
+        ArgumentCaptor<JobTask> captor = ArgumentCaptor.forClass(JobTask.class);
+        verify(taskRepository).insert(captor.capture());
+        JobTask inserted = captor.getValue();
+        assertThat(inserted.timeCritical()).isTrue();
+        assertThat(inserted.tcMaxAttempts()).isEqualTo(8);
+        assertThat(inserted.tcBaseIntervalMs()).isEqualTo(200L);
+        assertThat(inserted.tcMultiplier()).isEqualTo(1.5);
+        assertThat(inserted.tcMaxDelayMs()).isEqualTo(800L);
+        assertThat(inserted.tcDbSyncIntervalMs()).isEqualTo(3000L);
     }
 
     // ── Validation ───────────────────────────────────────────────────────────
