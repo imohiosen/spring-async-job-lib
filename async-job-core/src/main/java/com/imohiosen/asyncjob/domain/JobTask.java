@@ -31,6 +31,7 @@ public record JobTask(
         OffsetDateTime asyncCompletedAt,
         String         lastErrorMessage,
         String         lastErrorClass,
+        Long           fenceToken,
         String         payload,
         String         result
 ) {

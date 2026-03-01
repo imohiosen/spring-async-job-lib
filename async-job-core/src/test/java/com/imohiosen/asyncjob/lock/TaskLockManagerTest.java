@@ -5,9 +5,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.redisson.api.RLock;
+import org.redisson.api.RFencedLock;
 import org.redisson.api.RedissonClient;
 
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
@@ -19,7 +20,7 @@ import static org.mockito.Mockito.*;
 class TaskLockManagerTest {
 
     @Mock RedissonClient redissonClient;
-    @Mock RLock          rLock;
+    @Mock RFencedLock    fencedLock;
 
     TaskLockManager lockManager;
     UUID            taskId;
@@ -28,54 +29,81 @@ class TaskLockManagerTest {
     void setUp() {
         lockManager = new TaskLockManager(redissonClient, LockProperties.DEFAULT);
         taskId = UUID.randomUUID();
-        lenient().when(redissonClient.getLock(anyString())).thenReturn(rLock);
+        lenient().when(redissonClient.getFencedLock(anyString())).thenReturn(fencedLock);
     }
 
     @Test
-    void tryLock_whenLockAcquired_returnsTrue() throws InterruptedException {
-        when(rLock.tryLock(
+    void tryLock_whenLockAcquired_returnsFencedLockWithToken() throws InterruptedException {
+        when(fencedLock.tryLockAndGetToken(
                 eq(LockProperties.DEFAULT.waitTimeMs()),
                 eq(LockProperties.DEFAULT.leaseTimeMs()),
                 eq(TimeUnit.MILLISECONDS)
-        )).thenReturn(true);
+        )).thenReturn(42L);
 
-        assertThat(lockManager.tryLock(taskId)).isTrue();
-        verify(redissonClient).getLock("async-job-task-lock:" + taskId);
+        Optional<FencedLock> result = lockManager.tryLock(taskId);
+
+        assertThat(result).isPresent();
+        assertThat(result.get().token()).isEqualTo(42L);
+        verify(redissonClient).getFencedLock("async-job-task-lock:" + taskId);
     }
 
     @Test
-    void tryLock_whenLockNotAcquired_returnsFalse() throws InterruptedException {
-        when(rLock.tryLock(anyLong(), anyLong(), any())).thenReturn(false);
-        assertThat(lockManager.tryLock(taskId)).isFalse();
+    void tryLock_whenLockNotAcquired_returnsEmpty() throws InterruptedException {
+        when(fencedLock.tryLockAndGetToken(anyLong(), anyLong(), any())).thenReturn(null);
+
+        Optional<FencedLock> result = lockManager.tryLock(taskId);
+
+        assertThat(result).isEmpty();
     }
 
     @Test
-    void tryLock_onInterruption_returnsFalseAndRestoresInterruptFlag() throws InterruptedException {
-        when(rLock.tryLock(anyLong(), anyLong(), any())).thenThrow(new InterruptedException());
-        boolean result = lockManager.tryLock(taskId);
-        assertThat(result).isFalse();
-        assertThat(Thread.currentThread().isInterrupted()).isTrue();
-        Thread.interrupted(); // clean up
+    void tryLock_onException_returnsEmpty() {
+        when(fencedLock.tryLockAndGetToken(anyLong(), anyLong(), any()))
+                .thenThrow(new RuntimeException("Redis connection lost"));
+
+        Optional<FencedLock> result = lockManager.tryLock(taskId);
+
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    void tryLock_successiveAcquisitions_returnIncreasingTokens() throws InterruptedException {
+        when(fencedLock.tryLockAndGetToken(anyLong(), anyLong(), any()))
+                .thenReturn(7L)
+                .thenReturn(8L);
+
+        Optional<FencedLock> first  = lockManager.tryLock(taskId);
+        Optional<FencedLock> second = lockManager.tryLock(taskId);
+
+        assertThat(first).isPresent();
+        assertThat(second).isPresent();
+        assertThat(second.get().token()).isGreaterThan(first.get().token());
     }
 
     @Test
     void unlock_whenHeldByCurrentThread_releasesLock() {
-        when(rLock.isHeldByCurrentThread()).thenReturn(true);
+        when(fencedLock.isHeldByCurrentThread()).thenReturn(true);
         lockManager.unlock(taskId);
-        verify(rLock).unlock();
+        verify(fencedLock).unlock();
     }
 
     @Test
     void unlock_whenNotHeldByCurrentThread_doesNotUnlock() {
-        when(rLock.isHeldByCurrentThread()).thenReturn(false);
+        when(fencedLock.isHeldByCurrentThread()).thenReturn(false);
         lockManager.unlock(taskId);
-        verify(rLock, never()).unlock();
+        verify(fencedLock, never()).unlock();
     }
 
     @Test
-    void noOpLockManager_alwaysAcquires() {
+    void noOpLockManager_alwaysAcquiresWithIncreasingTokens() {
         NoOpTaskLockManager noOp = new NoOpTaskLockManager();
-        assertThat(noOp.tryLock(taskId)).isTrue();
+
+        Optional<FencedLock> first  = noOp.tryLock(taskId);
+        Optional<FencedLock> second = noOp.tryLock(taskId);
+
+        assertThat(first).isPresent();
+        assertThat(second).isPresent();
+        assertThat(second.get().token()).isGreaterThan(first.get().token());
         noOp.unlock(taskId); // should not throw
     }
 }

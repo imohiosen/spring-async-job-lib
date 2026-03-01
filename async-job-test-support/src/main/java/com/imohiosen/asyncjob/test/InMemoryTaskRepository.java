@@ -37,7 +37,7 @@ public class InMemoryTaskRepository extends TaskRepository {
     }
 
     @Override
-    public void markInProgress(UUID taskId, OffsetDateTime startedAt) {
+    public void markInProgress(UUID taskId, OffsetDateTime startedAt, long fenceToken) {
         update(taskId, t -> new JobTask(
                 t.id(), t.jobId(), t.taskType(), t.kafkaTopic(),
                 t.kafkaPartition(), t.kafkaOffset(), TaskStatus.IN_PROGRESS,
@@ -46,12 +46,16 @@ public class InMemoryTaskRepository extends TaskRepository {
                 OffsetDateTime.now(), t.nextAttemptTime(),
                 t.baseIntervalMs(), t.multiplier(), t.maxDelayMs(),
                 t.asyncSubmittedAt(), t.asyncCompletedAt(),
-                t.lastErrorMessage(), t.lastErrorClass(), t.payload(), t.result()
+                t.lastErrorMessage(), t.lastErrorClass(), fenceToken, t.payload(), t.result()
         ));
     }
 
     @Override
-    public void markCompleted(UUID taskId, String result, OffsetDateTime completedAt) {
+    public boolean markCompleted(UUID taskId, String result, OffsetDateTime completedAt, long fenceToken) {
+        JobTask existing = store.get(taskId);
+        if (existing == null || (existing.fenceToken() != null && existing.fenceToken() != fenceToken)) {
+            return false;
+        }
         update(taskId, t -> new JobTask(
                 t.id(), t.jobId(), t.taskType(), t.kafkaTopic(),
                 t.kafkaPartition(), t.kafkaOffset(), TaskStatus.COMPLETED,
@@ -60,12 +64,13 @@ public class InMemoryTaskRepository extends TaskRepository {
                 t.lastAttemptTime(), null,
                 t.baseIntervalMs(), t.multiplier(), t.maxDelayMs(),
                 t.asyncSubmittedAt(), t.asyncCompletedAt(),
-                null, null, t.payload(), result
+                null, null, t.fenceToken(), t.payload(), result
         ));
+        return true;
     }
 
     @Override
-    public void recordAsyncSubmitted(UUID taskId, OffsetDateTime submittedAt) {
+    public void recordAsyncSubmitted(UUID taskId, OffsetDateTime submittedAt, long fenceToken) {
         update(taskId, t -> new JobTask(
                 t.id(), t.jobId(), t.taskType(), t.kafkaTopic(),
                 t.kafkaPartition(), t.kafkaOffset(), t.status(),
@@ -74,12 +79,12 @@ public class InMemoryTaskRepository extends TaskRepository {
                 t.lastAttemptTime(), t.nextAttemptTime(),
                 t.baseIntervalMs(), t.multiplier(), t.maxDelayMs(),
                 submittedAt, t.asyncCompletedAt(),
-                t.lastErrorMessage(), t.lastErrorClass(), t.payload(), t.result()
+                t.lastErrorMessage(), t.lastErrorClass(), t.fenceToken(), t.payload(), t.result()
         ));
     }
 
     @Override
-    public void recordAsyncCompleted(UUID taskId, OffsetDateTime completedAt) {
+    public void recordAsyncCompleted(UUID taskId, OffsetDateTime completedAt, long fenceToken) {
         update(taskId, t -> new JobTask(
                 t.id(), t.jobId(), t.taskType(), t.kafkaTopic(),
                 t.kafkaPartition(), t.kafkaOffset(), t.status(),
@@ -88,13 +93,18 @@ public class InMemoryTaskRepository extends TaskRepository {
                 t.lastAttemptTime(), t.nextAttemptTime(),
                 t.baseIntervalMs(), t.multiplier(), t.maxDelayMs(),
                 t.asyncSubmittedAt(), completedAt,
-                t.lastErrorMessage(), t.lastErrorClass(), t.payload(), t.result()
+                t.lastErrorMessage(), t.lastErrorClass(), t.fenceToken(), t.payload(), t.result()
         ));
     }
 
     @Override
-    public void markFailed(UUID taskId, int attemptCount, OffsetDateTime lastAttemptTime,
-                           OffsetDateTime nextAttemptTime, String errorMessage, String errorClass) {
+    public boolean markFailed(UUID taskId, int attemptCount, OffsetDateTime lastAttemptTime,
+                           OffsetDateTime nextAttemptTime, String errorMessage, String errorClass,
+                           long fenceToken) {
+        JobTask existing = store.get(taskId);
+        if (existing == null || (existing.fenceToken() != null && existing.fenceToken() != fenceToken)) {
+            return false;
+        }
         update(taskId, t -> new JobTask(
                 t.id(), t.jobId(), t.taskType(), t.kafkaTopic(),
                 t.kafkaPartition(), t.kafkaOffset(), TaskStatus.FAILED,
@@ -103,13 +113,18 @@ public class InMemoryTaskRepository extends TaskRepository {
                 lastAttemptTime, nextAttemptTime,
                 t.baseIntervalMs(), t.multiplier(), t.maxDelayMs(),
                 t.asyncSubmittedAt(), t.asyncCompletedAt(),
-                errorMessage, errorClass, t.payload(), t.result()
+                errorMessage, errorClass, t.fenceToken(), t.payload(), t.result()
         ));
+        return true;
     }
 
     @Override
-    public void markDeadLetter(UUID taskId, int attemptCount, OffsetDateTime lastAttemptTime,
-                               String errorMessage, String errorClass) {
+    public boolean markDeadLetter(UUID taskId, int attemptCount, OffsetDateTime lastAttemptTime,
+                               String errorMessage, String errorClass, long fenceToken) {
+        JobTask existing = store.get(taskId);
+        if (existing == null || (existing.fenceToken() != null && existing.fenceToken() != fenceToken)) {
+            return false;
+        }
         update(taskId, t -> new JobTask(
                 t.id(), t.jobId(), t.taskType(), t.kafkaTopic(),
                 t.kafkaPartition(), t.kafkaOffset(), TaskStatus.DEAD_LETTER,
@@ -118,8 +133,9 @@ public class InMemoryTaskRepository extends TaskRepository {
                 lastAttemptTime, null,
                 t.baseIntervalMs(), t.multiplier(), t.maxDelayMs(),
                 t.asyncSubmittedAt(), t.asyncCompletedAt(),
-                errorMessage, errorClass, t.payload(), t.result()
+                errorMessage, errorClass, t.fenceToken(), t.payload(), t.result()
         ));
+        return true;
     }
 
     @Override

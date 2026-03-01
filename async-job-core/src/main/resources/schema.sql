@@ -56,6 +56,7 @@ CREATE TABLE job_tasks (
     async_completed_at  TIMESTAMPTZ,
     last_error_message  TEXT,
     last_error_class    VARCHAR(500),
+    fence_token         BIGINT,
     payload             JSONB           NOT NULL,
     result              JSONB,
     metadata            JSONB

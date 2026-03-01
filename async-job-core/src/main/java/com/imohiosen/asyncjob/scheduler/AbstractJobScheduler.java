@@ -146,7 +146,7 @@ public abstract class AbstractJobScheduler {
                     null, null, taskDeadline, false, 0,
                     null, null,
                     policy.baseIntervalMs(), policy.multiplier(), policy.maxDelayMs(),
-                    null, null, null, null, payload, null);
+                    null, null, null, null, null, payload, null);
             taskRepository.insert(task);
 
             // Produce to Kafka

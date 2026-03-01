@@ -1,21 +1,29 @@
 package com.imohiosen.asyncjob.lock;
 
-import org.redisson.api.RLock;
+import org.redisson.api.RFencedLock;
 import org.redisson.api.RedissonClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Manages per-task distributed locks using Redisson.
+ * Manages per-task distributed locks using Redisson's <strong>fenced lock</strong>.
  *
  * <p>Lock key pattern: {@code async-job-task-lock:{taskId}}
  *
- * <p><strong>Critical:</strong> All locks use an explicit lease time ({@link LockProperties#leaseTimeMs()})
- * to ensure the lock is automatically released if the JVM dies before the
- * {@code finally} block can execute. This prevents deadlocks across cluster nodes.
+ * <h2>Fenced-token guarantee</h2>
+ * <p>Each successful acquisition returns a {@link FencedLock} whose token is a
+ * monotonically increasing {@code long}. The consumer stores this token in the
+ * database when marking a task {@code IN_PROGRESS}. All subsequent writes
+ * include {@code WHERE fence_token = ?}, so a stale holder whose lease expired
+ * cannot overwrite state written by a newer holder with a higher token.
+ *
+ * <p><strong>Critical:</strong> All locks use an explicit lease time
+ * ({@link LockProperties#leaseTimeMs()}) to ensure the lock is automatically
+ * released if the JVM dies before the {@code finally} block can execute.
  */
 public class TaskLockManager {
 
@@ -31,42 +39,46 @@ public class TaskLockManager {
     }
 
     /**
-     * Attempts to acquire a distributed lock for the given task.
+     * Attempts to acquire a fenced distributed lock for the given task.
      *
      * @param taskId task UUID to lock
-     * @return {@code true} if the lock was acquired; {@code false} if another node holds it
+     * @return a {@link FencedLock} with a monotonically increasing token if the lock was
+     *         acquired; {@link Optional#empty()} if another node holds it
      */
-    public boolean tryLock(UUID taskId) {
-        RLock lock = redissonClient.getLock(LOCK_PREFIX + taskId);
+    public Optional<FencedLock> tryLock(UUID taskId) {
+        RFencedLock lock = redissonClient.getFencedLock(LOCK_PREFIX + taskId);
         try {
-            boolean acquired = lock.tryLock(
+            Long token = lock.tryLockAndGetToken(
                     props.waitTimeMs(),
                     props.leaseTimeMs(),
                     TimeUnit.MILLISECONDS
             );
-            if (acquired) {
-                log.debug("Lock acquired for task={}", taskId);
+            if (token != null) {
+                log.debug("Fenced lock acquired for task={} token={}", taskId, token);
+                return Optional.of(new FencedLock(token));
             } else {
                 log.debug("Lock NOT acquired for task={} (held by another node)", taskId);
+                return Optional.empty();
             }
-            return acquired;
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            log.warn("Lock acquisition interrupted for task={}", taskId);
-            return false;
+        } catch (Exception e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            log.warn("Lock acquisition failed for task={}: {}", taskId, e.getMessage());
+            return Optional.empty();
         }
     }
 
     /**
-     * Releases the lock for the given task.
+     * Releases the fenced lock for the given task.
      * Safe to call even if the lock was not acquired by the current thread —
      * the {@code isHeldByCurrentThread()} guard prevents {@link IllegalMonitorStateException}.
      */
     public void unlock(UUID taskId) {
-        RLock lock = redissonClient.getLock(LOCK_PREFIX + taskId);
+        RFencedLock lock = redissonClient.getFencedLock(LOCK_PREFIX + taskId);
         if (lock.isHeldByCurrentThread()) {
             lock.unlock();
-            log.debug("Lock released for task={}", taskId);
+            log.debug("Fenced lock released for task={}", taskId);
         }
     }
 }

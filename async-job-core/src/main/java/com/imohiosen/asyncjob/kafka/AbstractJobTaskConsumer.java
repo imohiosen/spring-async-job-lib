@@ -4,6 +4,7 @@ import com.imohiosen.asyncjob.domain.JobTask;
 import com.imohiosen.asyncjob.domain.TaskResult;
 import com.imohiosen.asyncjob.domain.TaskStatus;
 import com.imohiosen.asyncjob.executor.AsyncTaskExecutorBridge;
+import com.imohiosen.asyncjob.lock.FencedLock;
 import com.imohiosen.asyncjob.lock.TaskLockManager;
 import com.imohiosen.asyncjob.repository.JobRepository;
 import com.imohiosen.asyncjob.repository.TaskRepository;
@@ -115,12 +116,14 @@ public abstract class AbstractJobTaskConsumer {
         JobKafkaMessage message = kafkaProducer.deserialize(record.value());
         UUID taskId = message.taskId();
 
-        // 1. Acquire Redisson distributed lock — explicit lease prevents deadlock on crash
-        boolean locked = lockManager.tryLock(taskId);
-        if (!locked) {
+        // 1. Acquire Redisson fenced lock — token prevents stale writes after lease expiry
+        Optional<FencedLock> maybeLock = lockManager.tryLock(taskId);
+        if (maybeLock.isEmpty()) {
             log.warn("Could not acquire lock for task={}, skipping (another node is processing)", taskId);
             return;
         }
+
+        long fenceToken = maybeLock.get().token();
 
         try {
             // 2. Load task and verify it is still eligible (idempotency guard)
@@ -132,26 +135,31 @@ public abstract class AbstractJobTaskConsumer {
 
             JobTask task = maybeTask.get();
 
-            // 3. Mark IN_PROGRESS and record startedAt
-            taskRepository.markInProgress(taskId, OffsetDateTime.now());
+            // 3. Mark IN_PROGRESS with fence token — subsequent writes are guarded by this token
+            taskRepository.markInProgress(taskId, OffsetDateTime.now(), fenceToken);
 
             // 4. Step 1 — submit to @Async executor; record asyncSubmittedAt
             OffsetDateTime submittedAt = OffsetDateTime.now();
             CompletableFuture<TaskResult> future = bridge.submitAsync(() -> processTask(task));
-            taskRepository.recordAsyncSubmitted(taskId, submittedAt);
-            log.debug("Task={} submitted to async executor at {}", taskId, submittedAt);
+            taskRepository.recordAsyncSubmitted(taskId, submittedAt, fenceToken);
+            log.debug("Task={} submitted to async executor at {} (fence={})", taskId, submittedAt, fenceToken);
 
             // 5. Step 2 — wait for completion with deadline-aware timeout
             TaskResult result = future.get(asyncTimeoutMs(task), TimeUnit.MILLISECONDS);
 
-            // 6. Handle result
+            // 6. Handle result — fence token ensures stale holders cannot overwrite
             if (result.isSuccess()) {
                 OffsetDateTime completedAt = OffsetDateTime.now();
-                taskRepository.markCompleted(taskId, result.payload(), completedAt);
-                taskRepository.recordAsyncCompleted(taskId, completedAt);
-                log.info("Task={} completed successfully", taskId);
+                boolean written = taskRepository.markCompleted(taskId, result.payload(), completedAt, fenceToken);
+                if (written) {
+                    taskRepository.recordAsyncCompleted(taskId, completedAt, fenceToken);
+                    log.info("Task={} completed successfully (fence={})", taskId, fenceToken);
+                } else {
+                    log.warn("Task={} completion rejected — fence token {} is stale (another node took over)",
+                            taskId, fenceToken);
+                }
             } else {
-                handleFailure(task, result.error());
+                handleFailure(task, result.error(), fenceToken);
             }
 
             // 7. Update parent job counters
@@ -163,7 +171,7 @@ public abstract class AbstractJobTaskConsumer {
         }
     }
 
-    private void handleFailure(JobTask task, Throwable error) {
+    private void handleFailure(JobTask task, Throwable error, long fenceToken) {
         int nextAttemptNumber = task.attemptCount() + 1;
         String errorMessage = error != null ? error.getMessage() : "Unknown error";
         String errorClass   = error != null ? error.getClass().getName() : "Unknown";
@@ -172,15 +180,23 @@ public abstract class AbstractJobTaskConsumer {
         log.warn("Task={} failed (attempt {}/{}): {}", task.id(), nextAttemptNumber, maxAttempts, errorMessage);
 
         if (nextAttemptNumber >= maxAttempts) {
-            taskRepository.markDeadLetter(task.id(), nextAttemptNumber,
-                    OffsetDateTime.now(), errorMessage, errorClass);
-            log.error("Task={} exhausted all {} attempts, moved to DEAD_LETTER", task.id(), maxAttempts);
+            boolean written = taskRepository.markDeadLetter(task.id(), nextAttemptNumber,
+                    OffsetDateTime.now(), errorMessage, errorClass, fenceToken);
+            if (written) {
+                log.error("Task={} exhausted all {} attempts, moved to DEAD_LETTER", task.id(), maxAttempts);
+            } else {
+                log.warn("Task={} DEAD_LETTER update rejected — fence token {} is stale", task.id(), fenceToken);
+            }
         } else {
             long delayMs = task.backoffPolicy().computeDelayMs(nextAttemptNumber);
             OffsetDateTime nextAttemptTime = OffsetDateTime.now().plusNanos(delayMs * 1_000_000L);
-            taskRepository.markFailed(task.id(), nextAttemptNumber,
-                    OffsetDateTime.now(), nextAttemptTime, errorMessage, errorClass);
-            log.info("Task={} scheduled for retry at {} (delay={}ms)", task.id(), nextAttemptTime, delayMs);
+            boolean written = taskRepository.markFailed(task.id(), nextAttemptNumber,
+                    OffsetDateTime.now(), nextAttemptTime, errorMessage, errorClass, fenceToken);
+            if (written) {
+                log.info("Task={} scheduled for retry at {} (delay={}ms)", task.id(), nextAttemptTime, delayMs);
+            } else {
+                log.warn("Task={} failure update rejected — fence token {} is stale", task.id(), fenceToken);
+            }
         }
     }
 }

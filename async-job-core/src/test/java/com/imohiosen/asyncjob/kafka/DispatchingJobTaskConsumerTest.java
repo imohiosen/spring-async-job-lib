@@ -6,6 +6,7 @@ import com.imohiosen.asyncjob.domain.TaskStatus;
 import com.imohiosen.asyncjob.executor.AsyncTaskExecutorBridge;
 import com.imohiosen.asyncjob.handler.JobTaskHandler;
 import com.imohiosen.asyncjob.handler.JobTaskHandlerRegistry;
+import com.imohiosen.asyncjob.lock.FencedLock;
 import com.imohiosen.asyncjob.lock.TaskLockManager;
 import com.imohiosen.asyncjob.repository.JobRepository;
 import com.imohiosen.asyncjob.repository.TaskRepository;
@@ -59,16 +60,17 @@ class DispatchingJobTaskConsumerTest {
 
         JobTask task = buildTask(taskId, jobId, "INVOICE", TaskStatus.PENDING, 0);
 
-        when(lockManager.tryLock(taskId)).thenReturn(true);
+        when(lockManager.tryLock(taskId)).thenReturn(Optional.of(new FencedLock(1L)));
         when(taskRepository.findEligible(taskId)).thenReturn(Optional.of(task));
         when(kafkaProducer.deserialize(any())).thenReturn(
                 new JobKafkaMessage(taskId, jobId, "INVOICE", "{}"));
+        when(taskRepository.markCompleted(eq(taskId), any(), any(), eq(1L))).thenReturn(true);
         when(bridge.submitAsync(any())).thenReturn(
                 CompletableFuture.completedFuture(TaskResult.success("{\"invoice\":true}")));
 
         consumer.consume(buildRecord(taskId));
 
-        verify(taskRepository).markCompleted(eq(taskId), eq("{\"invoice\":true}"), any());
+        verify(taskRepository).markCompleted(eq(taskId), eq("{\"invoice\":true}"), any(), eq(1L));
         verify(lockManager).unlock(taskId);
     }
 
@@ -82,16 +84,17 @@ class DispatchingJobTaskConsumerTest {
 
         JobTask task = buildTask(taskId, jobId, "REPORT", TaskStatus.PENDING, 0);
 
-        when(lockManager.tryLock(taskId)).thenReturn(true);
+        when(lockManager.tryLock(taskId)).thenReturn(Optional.of(new FencedLock(2L)));
         when(taskRepository.findEligible(taskId)).thenReturn(Optional.of(task));
         when(kafkaProducer.deserialize(any())).thenReturn(
                 new JobKafkaMessage(taskId, jobId, "REPORT", "{}"));
+        when(taskRepository.markCompleted(eq(taskId), any(), any(), eq(2L))).thenReturn(true);
         when(bridge.submitAsync(any())).thenReturn(
                 CompletableFuture.completedFuture(TaskResult.success("{\"report\":true}")));
 
         consumer.consume(buildRecord(taskId));
 
-        verify(taskRepository).markCompleted(eq(taskId), eq("{\"report\":true}"), any());
+        verify(taskRepository).markCompleted(eq(taskId), eq("{\"report\":true}"), any(), eq(2L));
     }
 
     @Test
@@ -104,7 +107,7 @@ class DispatchingJobTaskConsumerTest {
 
         JobTask task = buildTask(taskId, jobId, "UNKNOWN", TaskStatus.PENDING, 0);
 
-        when(lockManager.tryLock(taskId)).thenReturn(true);
+        when(lockManager.tryLock(taskId)).thenReturn(Optional.of(new FencedLock(3L)));
         when(taskRepository.findEligible(taskId)).thenReturn(Optional.of(task));
         when(kafkaProducer.deserialize(any())).thenReturn(
                 new JobKafkaMessage(taskId, jobId, "UNKNOWN", "{}"));
@@ -143,10 +146,12 @@ class DispatchingJobTaskConsumerTest {
         // attemptCount=1, maxAttempts=2 → should move to DEAD_LETTER
         JobTask task = buildTask(taskId, jobId, "STRICT", TaskStatus.FAILED, 1);
 
-        when(lockManager.tryLock(taskId)).thenReturn(true);
+        when(lockManager.tryLock(taskId)).thenReturn(Optional.of(new FencedLock(4L)));
         when(taskRepository.findEligible(taskId)).thenReturn(Optional.of(task));
         when(kafkaProducer.deserialize(any())).thenReturn(
                 new JobKafkaMessage(taskId, jobId, "STRICT", "{}"));
+        when(taskRepository.markDeadLetter(eq(taskId), eq(2), any(), eq("fail"),
+                eq("java.lang.RuntimeException"), eq(4L))).thenReturn(true);
         when(bridge.submitAsync(any())).thenReturn(
                 CompletableFuture.completedFuture(TaskResult.failure(new RuntimeException("fail"))));
 
@@ -154,7 +159,7 @@ class DispatchingJobTaskConsumerTest {
 
         // attempt 2 of 2 → DEAD_LETTER
         verify(taskRepository).markDeadLetter(eq(taskId), eq(2), any(), eq("fail"),
-                eq("java.lang.RuntimeException"));
+                eq("java.lang.RuntimeException"), eq(4L));
     }
 
     @Test
@@ -185,7 +190,7 @@ class DispatchingJobTaskConsumerTest {
                 now.plusHours(1), false,
                 attemptCount, null, null,
                 1_000L, 2.0, 3_600_000L,
-                null, null, null, null, "{}", null
+                null, null, null, null, null, "{}", null
         );
     }
 

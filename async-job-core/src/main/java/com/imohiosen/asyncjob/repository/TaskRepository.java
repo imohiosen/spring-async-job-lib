@@ -62,59 +62,65 @@ public class TaskRepository {
         return results.stream().findFirst();
     }
 
-    public void markInProgress(UUID taskId, OffsetDateTime startedAt) {
+    public void markInProgress(UUID taskId, OffsetDateTime startedAt, long fenceToken) {
         jdbc.update("""
                 UPDATE job_tasks
                 SET status = 'IN_PROGRESS', started_at = ?, attempt_count = attempt_count + 1,
-                    last_attempt_time = NOW(), updated_at = NOW()
+                    last_attempt_time = NOW(), fence_token = ?, updated_at = NOW()
                 WHERE id = ?
-                """, toTimestamp(startedAt), taskId);
+                """, toTimestamp(startedAt), fenceToken, taskId);
     }
 
-    public void recordAsyncSubmitted(UUID taskId, OffsetDateTime submittedAt) {
+    public void recordAsyncSubmitted(UUID taskId, OffsetDateTime submittedAt, long fenceToken) {
         jdbc.update("""
-                UPDATE job_tasks SET async_submitted_at = ?, updated_at = NOW() WHERE id = ?
-                """, toTimestamp(submittedAt), taskId);
+                UPDATE job_tasks SET async_submitted_at = ?, updated_at = NOW()
+                WHERE id = ? AND fence_token = ?
+                """, toTimestamp(submittedAt), taskId, fenceToken);
     }
 
-    public void recordAsyncCompleted(UUID taskId, OffsetDateTime completedAt) {
+    public void recordAsyncCompleted(UUID taskId, OffsetDateTime completedAt, long fenceToken) {
         jdbc.update("""
-                UPDATE job_tasks SET async_completed_at = ?, updated_at = NOW() WHERE id = ?
-                """, toTimestamp(completedAt), taskId);
+                UPDATE job_tasks SET async_completed_at = ?, updated_at = NOW()
+                WHERE id = ? AND fence_token = ?
+                """, toTimestamp(completedAt), taskId, fenceToken);
     }
 
-    public void markCompleted(UUID taskId, String result, OffsetDateTime completedAt) {
-        jdbc.update("""
+    public boolean markCompleted(UUID taskId, String result, OffsetDateTime completedAt, long fenceToken) {
+        int rows = jdbc.update("""
                 UPDATE job_tasks
                 SET status = 'COMPLETED', completed_at = ?, result = ?::jsonb,
                     last_error_message = NULL, last_error_class = NULL, updated_at = NOW()
-                WHERE id = ?
-                """, toTimestamp(completedAt), result, taskId);
+                WHERE id = ? AND fence_token = ?
+                """, toTimestamp(completedAt), result, taskId, fenceToken);
+        return rows > 0;
     }
 
-    public void markFailed(UUID taskId, int attemptCount, OffsetDateTime lastAttemptTime,
-                           OffsetDateTime nextAttemptTime, String errorMessage, String errorClass) {
-        jdbc.update("""
+    public boolean markFailed(UUID taskId, int attemptCount, OffsetDateTime lastAttemptTime,
+                           OffsetDateTime nextAttemptTime, String errorMessage, String errorClass,
+                           long fenceToken) {
+        int rows = jdbc.update("""
                 UPDATE job_tasks
                 SET status = 'FAILED', attempt_count = ?, last_attempt_time = ?,
                     next_attempt_time = ?, last_error_message = ?, last_error_class = ?,
                     updated_at = NOW()
-                WHERE id = ?
+                WHERE id = ? AND fence_token = ?
                 """,
                 attemptCount, toTimestamp(lastAttemptTime),
-                toTimestamp(nextAttemptTime), errorMessage, errorClass, taskId);
+                toTimestamp(nextAttemptTime), errorMessage, errorClass, taskId, fenceToken);
+        return rows > 0;
     }
 
-    public void markDeadLetter(UUID taskId, int attemptCount, OffsetDateTime lastAttemptTime,
-                               String errorMessage, String errorClass) {
-        jdbc.update("""
+    public boolean markDeadLetter(UUID taskId, int attemptCount, OffsetDateTime lastAttemptTime,
+                               String errorMessage, String errorClass, long fenceToken) {
+        int rows = jdbc.update("""
                 UPDATE job_tasks
                 SET status = 'DEAD_LETTER', attempt_count = ?, last_attempt_time = ?,
                     next_attempt_time = NULL, last_error_message = ?, last_error_class = ?,
                     updated_at = NOW()
-                WHERE id = ?
+                WHERE id = ? AND fence_token = ?
                 """,
-                attemptCount, toTimestamp(lastAttemptTime), errorMessage, errorClass, taskId);
+                attemptCount, toTimestamp(lastAttemptTime), errorMessage, errorClass, taskId, fenceToken);
+        return rows > 0;
     }
 
     /**
@@ -175,6 +181,7 @@ public class TaskRepository {
                     toOdt(rs.getTimestamp("async_completed_at")),
                     rs.getString("last_error_message"),
                     rs.getString("last_error_class"),
+                    (Long) rs.getObject("fence_token"),
                     rs.getString("payload"),
                     rs.getString("result")
             );
