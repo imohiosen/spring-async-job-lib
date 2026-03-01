@@ -43,12 +43,6 @@ public interface JobRepository {
     void markCompleted(UUID id);
 
     /**
-     * Atomically recalculates all task counters for a job by querying child task statuses.
-     * Called after every task state transition.
-     */
-    void updateCounters(UUID jobId);
-
-    /**
      * Flags all jobs that have breached their deadline as stale.
      * Does NOT change the job's status — child tasks continue running.
      *

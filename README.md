@@ -167,7 +167,6 @@ asyncjob:
 - Exponential backoff `next_attempt_time` calculation
 - `DEAD_LETTER` promotion after max attempts
 - `async_submitted_at` and `async_completed_at` two-step tracking
-- Job counter denormalization (`pending_tasks`, `completed_tasks`, etc.)
 - Deadline guard sweeping (`timed_out` flag)
 - Fault-tolerant consumer (exceptions never kill the Kafka consumer thread)
 

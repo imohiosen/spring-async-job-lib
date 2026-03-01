@@ -9,44 +9,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class JobTest {
 
-    // ── isFinished ────────────────────────────────────────────────────────────
-
-    @Test
-    void isFinished_allTasksTerminal_returnsTrue() {
-        Job job = job(3, 0, 0, 1, 1, 1);
-        assertThat(job.isFinished()).isTrue();
-    }
-
-    @Test
-    void isFinished_allCompleted_returnsTrue() {
-        Job job = job(3, 0, 0, 3, 0, 0);
-        assertThat(job.isFinished()).isTrue();
-    }
-
-    @Test
-    void isFinished_allFailed_returnsTrue() {
-        Job job = job(2, 0, 0, 0, 2, 0);
-        assertThat(job.isFinished()).isTrue();
-    }
-
-    @Test
-    void isFinished_allDeadLetter_returnsTrue() {
-        Job job = job(2, 0, 0, 0, 0, 2);
-        assertThat(job.isFinished()).isTrue();
-    }
-
-    @Test
-    void isFinished_partialProgress_returnsFalse() {
-        Job job = job(5, 2, 1, 1, 1, 0);
-        assertThat(job.isFinished()).isFalse();
-    }
-
-    @Test
-    void isFinished_zeroTotalTasks_returnsFalse() {
-        Job job = job(0, 0, 0, 0, 0, 0);
-        assertThat(job.isFinished()).isFalse();
-    }
-
     // ── isDeadlineBreached ────────────────────────────────────────────────────
 
     @Test
@@ -131,24 +93,17 @@ class JobTest {
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private static Job job(int total, int pending, int inProgress, int completed, int failed, int deadLetter) {
-        OffsetDateTime now = OffsetDateTime.now();
-        return new Job(UUID.randomUUID(), "test-job", null, JobStatus.IN_PROGRESS,
-                now, now, now, null, now.plusHours(1), null, false,
-                total, pending, inProgress, completed, failed, deadLetter, null, false);
-    }
-
     private static Job jobWithDeadline(OffsetDateTime deadlineAt, boolean stale, JobStatus status) {
         OffsetDateTime now = OffsetDateTime.now();
         return new Job(UUID.randomUUID(), "test-job", null, status,
                 now, now, now, null, deadlineAt, null, stale,
-                5, 2, 1, 1, 1, 0, null, false);
+                null, false);
     }
 
     private static Job jobWithSchedule(JobStatus status, OffsetDateTime scheduledAt) {
         OffsetDateTime now = OffsetDateTime.now();
         return new Job(UUID.randomUUID(), "test-job", null, status,
                 now, now, null, null, now.plusHours(1), scheduledAt, false,
-                2, 2, 0, 0, 0, 0, null, false);
+                null, false);
     }
 }

@@ -62,7 +62,6 @@ class AbstractJobTaskConsumerTest {
         verify(taskRepository).markInProgress(eq(taskId), any(), eq(42L));
         verify(taskRepository).recordAsyncSubmitted(eq(taskId), any(), eq(42L));
         verify(taskRepository).markCompleted(eq(taskId), eq("{\"ok\":true}"), any(), eq(42L));
-        verify(jobRepository).updateCounters(jobId);
         verify(lockManager).unlock(taskId);
     }
 

@@ -33,9 +33,8 @@ public class InMemoryJobRepository implements JobRepository {
         store.computeIfPresent(id, (k, j) -> new Job(
                 j.id(), j.jobName(), j.correlationId(), status,
                 j.createdAt(), j.updatedAt(), j.startedAt(), j.completedAt(),
-                j.deadlineAt(), j.scheduledAt(), j.stale(), j.totalTasks(), j.pendingTasks(),
-                j.inProgressTasks(), j.completedTasks(), j.failedTasks(),
-                j.deadLetterTasks(), j.metadata(), j.timeCritical()
+                j.deadlineAt(), j.scheduledAt(), j.stale(),
+                j.metadata(), j.timeCritical()
         ));
     }
 
@@ -53,11 +52,6 @@ public class InMemoryJobRepository implements JobRepository {
     @Override
     public void markCompleted(UUID id) {
         updateStatus(id, JobStatus.COMPLETED);
-    }
-
-    @Override
-    public void updateCounters(UUID jobId) {
-        // no-op in test stub
     }
 
     @Override

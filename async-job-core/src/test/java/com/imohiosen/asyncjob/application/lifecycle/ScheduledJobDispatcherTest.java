@@ -103,6 +103,6 @@ class ScheduledJobDispatcherTest {
     private static Job dueJob(UUID jobId, OffsetDateTime now) {
         return new Job(jobId, "scheduled-job", null, JobStatus.SCHEDULED,
                 now, now, null, null, now.plusHours(1), now.minusMinutes(5),
-                false, 2, 2, 0, 0, 0, 0, null, false);
+                false, null, false);
     }
 }

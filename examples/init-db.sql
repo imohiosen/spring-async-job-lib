@@ -21,12 +21,6 @@ CREATE TABLE jobs (
     deadline_at         TIMESTAMPTZ     NOT NULL,
     scheduled_at        TIMESTAMPTZ,
     stale               BOOLEAN         NOT NULL DEFAULT FALSE,
-    total_tasks         INT             NOT NULL DEFAULT 0,
-    pending_tasks       INT             NOT NULL DEFAULT 0,
-    in_progress_tasks   INT             NOT NULL DEFAULT 0,
-    completed_tasks     INT             NOT NULL DEFAULT 0,
-    failed_tasks        INT             NOT NULL DEFAULT 0,
-    dead_letter_tasks   INT             NOT NULL DEFAULT 0,
     metadata            JSONB
 );
 

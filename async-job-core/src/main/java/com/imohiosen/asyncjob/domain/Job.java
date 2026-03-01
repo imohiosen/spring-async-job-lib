@@ -18,20 +18,9 @@ public record Job(
         OffsetDateTime   deadlineAt,
         OffsetDateTime   scheduledAt,
         boolean          stale,
-        int              totalTasks,
-        int              pendingTasks,
-        int              inProgressTasks,
-        int              completedTasks,
-        int              failedTasks,
-        int              deadLetterTasks,
         String           metadata,
         boolean          timeCritical
 ) {
-    /** Returns true if all tasks have reached a terminal state. */
-    public boolean isFinished() {
-        return completedTasks + failedTasks + deadLetterTasks >= totalTasks && totalTasks > 0;
-    }
-
     /** Returns true if the job deadline has passed and the job has not been flagged stale yet. */
     public boolean isDeadlineBreached() {
         return !stale

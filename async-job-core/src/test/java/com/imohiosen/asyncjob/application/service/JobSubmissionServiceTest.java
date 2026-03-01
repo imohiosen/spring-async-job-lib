@@ -94,7 +94,7 @@ class JobSubmissionServiceTest {
     }
 
     @Test
-    void submit_immediate_updatesCountersAndMarksStarted() {
+    void submit_immediate_marksStarted() {
         JobSubmissionRequest request = new JobSubmissionRequest(
                 "test-job", "test-topic", "TEST_TYPE",
                 List.of("{\"x\":1}"),
@@ -102,7 +102,6 @@ class JobSubmissionServiceTest {
 
         UUID jobId = service.submit(request);
 
-        verify(jobRepository).updateCounters(jobId);
         verify(jobRepository).tryMarkStarted(jobId);
     }
 
@@ -234,7 +233,6 @@ class JobSubmissionServiceTest {
 
         UUID jobId = service.submit(request);
 
-        verify(jobRepository).updateCounters(jobId);
         verify(jobRepository, never()).tryMarkStarted(any());
     }
 
@@ -246,7 +244,7 @@ class JobSubmissionServiceTest {
         UUID jobId = UUID.randomUUID();
         Job job = new Job(jobId, "test-job", null, JobStatus.SCHEDULED,
                 now, now, null, null, now.plusHours(1), now.minusMinutes(1),
-                false, 2, 2, 0, 0, 0, 0, null, false);
+                false, null, false);
 
         JobTask task1 = new JobTask(UUID.randomUUID(), jobId, "T", "topic",
                 null, null, TaskStatus.PENDING, now, now, null, null,
@@ -272,7 +270,7 @@ class JobSubmissionServiceTest {
         UUID jobId = UUID.randomUUID();
         Job job = new Job(jobId, "test-job", null, JobStatus.SCHEDULED,
                 now, now, null, null, now.plusHours(1), now.minusMinutes(1),
-                false, 1, 0, 0, 0, 0, 0, null, false);
+                false, null, false);
 
         // A completed task should be skipped
         JobTask completedTask = new JobTask(UUID.randomUUID(), jobId, "T", "topic",

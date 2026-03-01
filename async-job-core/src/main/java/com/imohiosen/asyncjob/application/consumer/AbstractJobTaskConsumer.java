@@ -198,8 +198,7 @@ public abstract class AbstractJobTaskConsumer {
                 handleFailure(task, result.error(), fenceToken);
             }
 
-            // 7. Update parent job counters
-            jobRepository.updateCounters(task.jobId());
+            // 7. Update complete
 
         } finally {
             // Always release — watchdog stops on unlock; if JVM dies the watchdog

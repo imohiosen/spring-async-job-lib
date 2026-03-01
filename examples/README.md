@@ -278,7 +278,7 @@ docker-compose logs -f redis
 docker exec -it async-job-postgres psql -U asyncjob -d asyncjob
 
 # View jobs
-SELECT id, job_name, status, total_tasks, completed_tasks, failed_tasks FROM jobs;
+SELECT id, job_name, status FROM jobs;
 
 # View tasks
 SELECT id, task_type, status, attempt_count, last_error_message FROM job_tasks;

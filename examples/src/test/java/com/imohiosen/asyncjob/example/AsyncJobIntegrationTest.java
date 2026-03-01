@@ -163,7 +163,7 @@ class AsyncJobIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void shouldUpdateJobCountersAsTasksComplete() {
+    void shouldCompleteAllTasksForJob() {
         // Given
         UUID jobId = UUID.randomUUID();
         Job job = createJob(jobId, "counter-test-job");
@@ -176,19 +176,15 @@ class AsyncJobIntegrationTest extends AbstractIntegrationTest {
         // When
         submissionService.submit(job, List.of(task1, task2));
 
-        // Then - Initially all pending
-        Job initialJob = jobRepository.findById(jobId).orElseThrow();
-        assertThat(initialJob.pendingTasks()).isEqualTo(2);
-        assertThat(initialJob.completedTasks()).isEqualTo(0);
-
-        // Wait for completion
+        // Then - Wait for all tasks to reach COMPLETED status
         await()
                 .atMost(20, TimeUnit.SECONDS)
                 .pollInterval(500, TimeUnit.MILLISECONDS)
                 .untilAsserted(() -> {
-                    Job updatedJob = jobRepository.findById(jobId).orElseThrow();
-                    assertThat(updatedJob.completedTasks()).isEqualTo(2);
-                    assertThat(updatedJob.pendingTasks()).isEqualTo(0);
+                    JobTask t1 = taskRepository.findById(task1.id()).orElseThrow();
+                    JobTask t2 = taskRepository.findById(task2.id()).orElseThrow();
+                    assertThat(t1.status()).isEqualTo(TaskStatus.COMPLETED);
+                    assertThat(t2.status()).isEqualTo(TaskStatus.COMPLETED);
                 });
     }
 
@@ -208,7 +204,6 @@ class AsyncJobIntegrationTest extends AbstractIntegrationTest {
                 now.plusHours(2), // deadlineAt
                 null, // scheduledAt
                 false,
-                0, 0, 0, 0, 0, 0, // task counters (will be set by submission)
                 "{}",
                 false
         );

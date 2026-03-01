@@ -61,7 +61,7 @@ class InMemoryJobRepositoryTest {
 
         Job updated = repository.findById(job.id()).orElseThrow();
         assertThat(updated.jobName()).isEqualTo(job.jobName());
-        assertThat(updated.totalTasks()).isEqualTo(job.totalTasks());
+        assertThat(updated.metadata()).isEqualTo(job.metadata());
         assertThat(updated.correlationId()).isEqualTo(job.correlationId());
     }
 
@@ -224,13 +224,13 @@ class InMemoryJobRepositoryTest {
         OffsetDateTime now = OffsetDateTime.now();
         return new Job(id, "test-job", null, status,
                 now, now, null, null, now.plusHours(1), null,
-                false, 2, 2, 0, 0, 0, 0, null, false);
+                false, null, false);
     }
 
     private static Job scheduledJob(UUID id, OffsetDateTime scheduledAt) {
         OffsetDateTime now = OffsetDateTime.now();
         return new Job(id, "scheduled-job", null, JobStatus.SCHEDULED,
                 now, now, null, null, now.plusHours(1), scheduledAt,
-                false, 2, 2, 0, 0, 0, 0, null, false);
+                false, null, false);
     }
 }

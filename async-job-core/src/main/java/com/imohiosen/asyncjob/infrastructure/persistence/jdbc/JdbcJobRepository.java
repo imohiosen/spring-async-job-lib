@@ -29,10 +29,9 @@ public class JdbcJobRepository implements JobRepository {
     public void insert(Job job) {
         String sql = """
                 INSERT INTO jobs (id, job_name, correlation_id, status, created_at, updated_at,
-                                  deadline_at, scheduled_at, stale, total_tasks, pending_tasks,
-                                  in_progress_tasks, completed_tasks, failed_tasks, dead_letter_tasks, metadata,
+                                  deadline_at, scheduled_at, stale, metadata,
                                   time_critical)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?)
                 """;
         try (Connection conn = dataSource.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
@@ -45,14 +44,8 @@ public class JdbcJobRepository implements JobRepository {
             ps.setTimestamp(7, toTimestamp(job.deadlineAt()));
             ps.setTimestamp(8, toTimestamp(job.scheduledAt()));
             ps.setBoolean(9, job.stale());
-            ps.setInt(10, job.totalTasks());
-            ps.setInt(11, job.pendingTasks());
-            ps.setInt(12, job.inProgressTasks());
-            ps.setInt(13, job.completedTasks());
-            ps.setInt(14, job.failedTasks());
-            ps.setInt(15, job.deadLetterTasks());
-            ps.setString(16, job.metadata());
-            ps.setBoolean(17, job.timeCritical());
+            ps.setString(10, job.metadata());
+            ps.setBoolean(11, job.timeCritical());
             ps.executeUpdate();
         } catch (SQLException e) {
             throw new RuntimeException("Failed to insert job " + job.id(), e);
@@ -117,27 +110,6 @@ public class JdbcJobRepository implements JobRepository {
             ps.executeUpdate();
         } catch (SQLException e) {
             throw new RuntimeException("Failed to mark job completed " + id, e);
-        }
-    }
-
-    @Override
-    public void updateCounters(UUID jobId) {
-        String sql = """
-                UPDATE jobs j SET
-                    pending_tasks     = (SELECT COUNT(*) FROM job_tasks WHERE job_id = j.id AND status = 'PENDING'),
-                    in_progress_tasks = (SELECT COUNT(*) FROM job_tasks WHERE job_id = j.id AND status = 'IN_PROGRESS'),
-                    completed_tasks   = (SELECT COUNT(*) FROM job_tasks WHERE job_id = j.id AND status = 'COMPLETED'),
-                    failed_tasks      = (SELECT COUNT(*) FROM job_tasks WHERE job_id = j.id AND status = 'FAILED'),
-                    dead_letter_tasks = (SELECT COUNT(*) FROM job_tasks WHERE job_id = j.id AND status = 'DEAD_LETTER'),
-                    updated_at        = NOW()
-                WHERE id = ?
-                """;
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, jobId.toString());
-            ps.executeUpdate();
-        } catch (SQLException e) {
-            throw new RuntimeException("Failed to update counters for job " + jobId, e);
         }
     }
 
@@ -207,12 +179,6 @@ public class JdbcJobRepository implements JobRepository {
                 toOdt(rs.getTimestamp("deadline_at")),
                 toOdt(rs.getTimestamp("scheduled_at")),
                 rs.getBoolean("stale"),
-                rs.getInt("total_tasks"),
-                rs.getInt("pending_tasks"),
-                rs.getInt("in_progress_tasks"),
-                rs.getInt("completed_tasks"),
-                rs.getInt("failed_tasks"),
-                rs.getInt("dead_letter_tasks"),
                 rs.getString("metadata"),
                 rs.getBoolean("time_critical")
         );

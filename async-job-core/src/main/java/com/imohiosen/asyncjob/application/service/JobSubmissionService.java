@@ -79,7 +79,7 @@ public class JobSubmissionService {
                 jobId, request.jobName(), request.correlationId(), initialStatus,
                 now, now, null, null, deadline,
                 immediate ? null : request.scheduledAt(),
-                false, 0, 0, 0, 0, 0, 0, request.metadata(),
+                false, request.metadata(),
                 request.timeCritical());
         jobRepository.insert(job);
 
@@ -124,8 +124,7 @@ public class JobSubmissionService {
             produced++;
         }
 
-        // 4. Update counters and set status
-        jobRepository.updateCounters(jobId);
+        // 4. Set status
         if (immediate) {
             jobRepository.tryMarkStarted(jobId);
             log.info("Job={} started immediately with {} tasks", jobId, produced);
