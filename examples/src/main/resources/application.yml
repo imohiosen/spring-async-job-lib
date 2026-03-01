@@ -1,0 +1,94 @@
+spring:
+  application:
+    name: async-job-example
+
+  # Database configuration
+  datasource:
+    url: jdbc:postgresql://localhost:5432/asyncjob
+    username: asyncjob
+    password: asyncjob123
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+
+  # Kafka configuration
+  kafka:
+    bootstrap-servers: localhost:9092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+      retries: 3
+    consumer:
+      group-id: async-job-example-group
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      enable-auto-commit: true
+      max-poll-records: 10
+
+# Redisson configuration
+spring.data.redis:
+  host: localhost
+  port: 6379
+
+# Async Job Library configuration
+asyncjob:
+  # Kafka topic for job tasks
+  kafka:
+    topic: async-job-tasks
+    
+  # Executor configuration
+  executor:
+    core-pool-size: 8
+    max-pool-size: 32
+    queue-capacity: 200
+    thread-name-prefix: async-job-worker-
+    
+  # Lock configuration (Redisson)
+  lock:
+    lease-time-ms: -1      # -1 = use watchdog (auto-extend)
+    wait-time-ms: 0        # 0 = fail immediately if lock not available
+    
+  # Deadline guard sweep (marks stale tasks)
+  deadline:
+    sweep-interval-ms: 30000  # 30 seconds
+    
+  # Retry sweep (republish failed tasks eligible for retry)
+  retry:
+    sweep-interval-ms: 15000  # 15 seconds
+    batch-size: 100
+    
+  # Scheduled job dispatcher sweep
+  schedule:
+    sweep-interval-ms: 10000  # 10 seconds
+    batch-size: 50
+
+# Logging configuration
+logging:
+  level:
+    root: INFO
+    com.imohiosen.asyncjob: DEBUG
+    org.springframework.kafka: INFO
+    org.redisson: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+
+# Server configuration
+server:
+  port: 8080
+  shutdown: graceful
+
+# Management endpoints
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always

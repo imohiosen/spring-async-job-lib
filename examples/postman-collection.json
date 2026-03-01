@@ -1,0 +1,155 @@
+{
+  "info": {
+    "name": "Async Job Example API",
+    "description": "API collection for testing the spring-async-job-lib example application",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health Check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:8080/api/jobs/health",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8080",
+          "path": ["api", "jobs", "health"]
+        }
+      }
+    },
+    {
+      "name": "Create Email Notification Job",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"jobName\": \"send-welcome-emails\",\n  \"correlationId\": \"campaign-123\",\n  \"deadlineHours\": 2,\n  \"tasks\": [\n    {\n      \"taskType\": \"EMAIL_NOTIFICATION\",\n      \"payload\": \"{\\\"recipient\\\":\\\"user@example.com\\\",\\\"subject\\\":\\\"Welcome!\\\",\\\"body\\\":\\\"Thanks for signing up.\\\"}\"\n    },\n    {\n      \"taskType\": \"EMAIL_NOTIFICATION\",\n      \"payload\": \"{\\\"recipient\\\":\\\"admin@example.com\\\",\\\"subject\\\":\\\"New User\\\",\\\"body\\\":\\\"A new user signed up.\\\"}\"\n    }\n  ]\n}"
+        },
+        "url": {
+          "raw": "http://localhost:8080/api/jobs",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8080",
+          "path": ["api", "jobs"]
+        }
+      }
+    },
+    {
+      "name": "Create Report Generation Job",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"jobName\": \"monthly-reports\",\n  \"correlationId\": \"report-2026-03\",\n  \"deadlineHours\": 4,\n  \"tasks\": [\n    {\n      \"taskType\": \"REPORT_GENERATION\",\n      \"payload\": \"{\\\"reportType\\\":\\\"SALES\\\",\\\"startDate\\\":\\\"2026-03-01\\\",\\\"endDate\\\":\\\"2026-03-31\\\"}\"\n    },\n    {\n      \"taskType\": \"REPORT_GENERATION\",\n      \"payload\": \"{\\\"reportType\\\":\\\"INVENTORY\\\",\\\"startDate\\\":\\\"2026-03-01\\\",\\\"endDate\\\":\\\"2026-03-31\\\"}\"\n    }\n  ]\n}"
+        },
+        "url": {
+          "raw": "http://localhost:8080/api/jobs",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8080",
+          "path": ["api", "jobs"]
+        }
+      }
+    },
+    {
+      "name": "Create Data Export Job",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"jobName\": \"customer-export\",\n  \"correlationId\": \"export-001\",\n  \"deadlineHours\": 6,\n  \"tasks\": [\n    {\n      \"taskType\": \"DATA_EXPORT\",\n      \"payload\": \"{\\\"entity\\\":\\\"customers\\\",\\\"format\\\":\\\"CSV\\\",\\\"recordCount\\\":5000}\"\n    },\n    {\n      \"taskType\": \"DATA_EXPORT\",\n      \"payload\": \"{\\\"entity\\\":\\\"orders\\\",\\\"format\\\":\\\"JSON\\\",\\\"recordCount\\\":10000}\"\n    }\n  ]\n}"
+        },
+        "url": {
+          "raw": "http://localhost:8080/api/jobs",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8080",
+          "path": ["api", "jobs"]
+        }
+      }
+    },
+    {
+      "name": "Get Job by ID",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:8080/api/jobs/:jobId",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8080",
+          "path": ["api", "jobs", ":jobId"],
+          "variable": [
+            {
+              "key": "jobId",
+              "value": "{{jobId}}",
+              "description": "UUID of the job"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Get Job Tasks",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:8080/api/jobs/:jobId/tasks",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8080",
+          "path": ["api", "jobs", ":jobId", "tasks"],
+          "variable": [
+            {
+              "key": "jobId",
+              "value": "{{jobId}}",
+              "description": "UUID of the job"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Get Task by ID",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:8080/api/jobs/tasks/:taskId",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8080",
+          "path": ["api", "jobs", "tasks", ":taskId"],
+          "variable": [
+            {
+              "key": "taskId",
+              "value": "{{taskId}}",
+              "description": "UUID of the task"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

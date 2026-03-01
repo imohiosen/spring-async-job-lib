@@ -1,0 +1,39 @@
+spring:
+  application:
+    name: async-job-example-test
+
+# Logging - reduced for tests
+logging:
+  level:
+    root: INFO
+    com.imohiosen.asyncjob: DEBUG
+    org.springframework.kafka: WARN
+    org.redisson: WARN
+    org.testcontainers: INFO
+
+# Async Job Library - faster sweeps for testing
+asyncjob:
+  kafka:
+    topic: async-job-tasks-test
+  executor:
+    core-pool-size: 4
+    max-pool-size: 8
+    queue-capacity: 50
+  lock:
+    lease-time-ms: -1
+    wait-time-ms: 0
+  deadline:
+    sweep-interval-ms: 5000
+  retry:
+    sweep-interval-ms: 3000
+    batch-size: 50
+  schedule:
+    sweep-interval-ms: 3000
+    batch-size: 25
+
+# Kafka consumer - optimized for tests
+spring.kafka:
+  consumer:
+    auto-offset-reset: earliest
+    enable-auto-commit: true
+    max-poll-records: 5
