@@ -30,15 +30,15 @@ CREATE TABLE jobs (
 );
 
 -- ---------------------------------------------------------------------------
--- JOB_TASKS — one row per Kafka message / unit of work
+-- JOB_TASKS — one row per message / unit of work
 -- ---------------------------------------------------------------------------
 CREATE TABLE job_tasks (
     id                  VARCHAR(36)     PRIMARY KEY,
     job_id              VARCHAR(36)     NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
     task_type           VARCHAR(255)    NOT NULL,
-    kafka_topic         VARCHAR(500)    NOT NULL,
-    kafka_partition     INT,
-    kafka_offset        BIGINT,
+    destination         VARCHAR(500)    NOT NULL,
+    partition           INT,
+    "offset"            BIGINT,
     status              task_status     NOT NULL DEFAULT 'PENDING',
     created_at          TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
     updated_at          TIMESTAMPTZ     NOT NULL DEFAULT NOW(),

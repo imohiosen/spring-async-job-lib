@@ -4,16 +4,15 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 
 /**
- * Represents a single unit of work — one Kafka message, one DB row.
- * Maps 1:1 to the {@code job_tasks} PostgreSQL table.
+ * Represents a single unit of work — one message, one DB row.
  */
 public record JobTask(
         UUID           id,
         UUID           jobId,
         String         taskType,
-        String         kafkaTopic,
-        Integer        kafkaPartition,
-        Long           kafkaOffset,
+        String         destination,
+        Integer        partition,
+        Long           offset,
         TaskStatus     status,
         OffsetDateTime createdAt,
         OffsetDateTime updatedAt,

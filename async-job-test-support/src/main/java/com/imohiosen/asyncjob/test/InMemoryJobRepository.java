@@ -2,24 +2,19 @@ package com.imohiosen.asyncjob.test;
 
 import com.imohiosen.asyncjob.domain.Job;
 import com.imohiosen.asyncjob.domain.JobStatus;
-import com.imohiosen.asyncjob.repository.JobRepository;
-import org.springframework.jdbc.core.JdbcTemplate;
+import com.imohiosen.asyncjob.port.repository.JobRepository;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * In-memory stub for {@link JobRepository} for use in unit tests.
+ * In-memory implementation of {@link JobRepository} for unit tests.
  * No database required.
  */
-public class InMemoryJobRepository extends JobRepository {
+public class InMemoryJobRepository implements JobRepository {
 
     private final Map<UUID, Job> store = new ConcurrentHashMap<>();
     private int staleJobsCount = 0;
-
-    public InMemoryJobRepository() {
-        super(null);
-    }
 
     @Override
     public void insert(Job job) {
@@ -43,13 +38,18 @@ public class InMemoryJobRepository extends JobRepository {
     }
 
     @Override
-    public void updateCounters(UUID jobId) {
-        // no-op in test stub
+    public void markStarted(UUID id) {
+        updateStatus(id, JobStatus.IN_PROGRESS);
     }
 
     @Override
-    public void markStarted(UUID id) {
-        updateStatus(id, JobStatus.IN_PROGRESS);
+    public void markCompleted(UUID id) {
+        updateStatus(id, JobStatus.COMPLETED);
+    }
+
+    @Override
+    public void updateCounters(UUID jobId) {
+        // no-op in test stub
     }
 
     @Override

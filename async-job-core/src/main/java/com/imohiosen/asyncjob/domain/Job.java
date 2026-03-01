@@ -5,7 +5,6 @@ import java.util.UUID;
 
 /**
  * Represents a single scheduled trigger execution (parent of JobTask records).
- * Maps 1:1 to the {@code jobs} PostgreSQL table.
  */
 public record Job(
         UUID             id,

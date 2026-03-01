@@ -2,23 +2,21 @@ package com.imohiosen.asyncjob.test;
 
 import com.imohiosen.asyncjob.domain.JobTask;
 import com.imohiosen.asyncjob.domain.TaskStatus;
-import com.imohiosen.asyncjob.repository.TaskRepository;
+import com.imohiosen.asyncjob.port.repository.TaskRepository;
 
 import java.time.OffsetDateTime;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.UnaryOperator;
+import java.util.stream.Collectors;
 
 /**
- * In-memory stub for {@link TaskRepository} for use in unit tests.
+ * In-memory implementation of {@link TaskRepository} for unit tests.
  */
-public class InMemoryTaskRepository extends TaskRepository {
+public class InMemoryTaskRepository implements TaskRepository {
 
     private final Map<UUID, JobTask> store = new ConcurrentHashMap<>();
     private int staleTasksCount = 0;
-
-    public InMemoryTaskRepository() {
-        super(null);
-    }
 
     @Override
     public void insert(JobTask task) {
@@ -39,8 +37,8 @@ public class InMemoryTaskRepository extends TaskRepository {
     @Override
     public void markInProgress(UUID taskId, OffsetDateTime startedAt, long fenceToken) {
         update(taskId, t -> new JobTask(
-                t.id(), t.jobId(), t.taskType(), t.kafkaTopic(),
-                t.kafkaPartition(), t.kafkaOffset(), TaskStatus.IN_PROGRESS,
+                t.id(), t.jobId(), t.taskType(), t.destination(),
+                t.partition(), t.offset(), TaskStatus.IN_PROGRESS,
                 t.createdAt(), OffsetDateTime.now(), startedAt, t.completedAt(),
                 t.deadlineAt(), t.stale(), t.attemptCount() + 1,
                 OffsetDateTime.now(), t.nextAttemptTime(),
@@ -57,8 +55,8 @@ public class InMemoryTaskRepository extends TaskRepository {
             return false;
         }
         update(taskId, t -> new JobTask(
-                t.id(), t.jobId(), t.taskType(), t.kafkaTopic(),
-                t.kafkaPartition(), t.kafkaOffset(), TaskStatus.COMPLETED,
+                t.id(), t.jobId(), t.taskType(), t.destination(),
+                t.partition(), t.offset(), TaskStatus.COMPLETED,
                 t.createdAt(), OffsetDateTime.now(), t.startedAt(), completedAt,
                 t.deadlineAt(), t.stale(), t.attemptCount(),
                 t.lastAttemptTime(), null,
@@ -72,8 +70,8 @@ public class InMemoryTaskRepository extends TaskRepository {
     @Override
     public void recordAsyncSubmitted(UUID taskId, OffsetDateTime submittedAt, long fenceToken) {
         update(taskId, t -> new JobTask(
-                t.id(), t.jobId(), t.taskType(), t.kafkaTopic(),
-                t.kafkaPartition(), t.kafkaOffset(), t.status(),
+                t.id(), t.jobId(), t.taskType(), t.destination(),
+                t.partition(), t.offset(), t.status(),
                 t.createdAt(), OffsetDateTime.now(), t.startedAt(), t.completedAt(),
                 t.deadlineAt(), t.stale(), t.attemptCount(),
                 t.lastAttemptTime(), t.nextAttemptTime(),
@@ -86,8 +84,8 @@ public class InMemoryTaskRepository extends TaskRepository {
     @Override
     public void recordAsyncCompleted(UUID taskId, OffsetDateTime completedAt, long fenceToken) {
         update(taskId, t -> new JobTask(
-                t.id(), t.jobId(), t.taskType(), t.kafkaTopic(),
-                t.kafkaPartition(), t.kafkaOffset(), t.status(),
+                t.id(), t.jobId(), t.taskType(), t.destination(),
+                t.partition(), t.offset(), t.status(),
                 t.createdAt(), OffsetDateTime.now(), t.startedAt(), t.completedAt(),
                 t.deadlineAt(), t.stale(), t.attemptCount(),
                 t.lastAttemptTime(), t.nextAttemptTime(),
@@ -106,8 +104,8 @@ public class InMemoryTaskRepository extends TaskRepository {
             return false;
         }
         update(taskId, t -> new JobTask(
-                t.id(), t.jobId(), t.taskType(), t.kafkaTopic(),
-                t.kafkaPartition(), t.kafkaOffset(), TaskStatus.FAILED,
+                t.id(), t.jobId(), t.taskType(), t.destination(),
+                t.partition(), t.offset(), TaskStatus.FAILED,
                 t.createdAt(), OffsetDateTime.now(), t.startedAt(), t.completedAt(),
                 t.deadlineAt(), t.stale(), attemptCount,
                 lastAttemptTime, nextAttemptTime,
@@ -126,8 +124,8 @@ public class InMemoryTaskRepository extends TaskRepository {
             return false;
         }
         update(taskId, t -> new JobTask(
-                t.id(), t.jobId(), t.taskType(), t.kafkaTopic(),
-                t.kafkaPartition(), t.kafkaOffset(), TaskStatus.DEAD_LETTER,
+                t.id(), t.jobId(), t.taskType(), t.destination(),
+                t.partition(), t.offset(), TaskStatus.DEAD_LETTER,
                 t.createdAt(), OffsetDateTime.now(), t.startedAt(), t.completedAt(),
                 t.deadlineAt(), t.stale(), attemptCount,
                 lastAttemptTime, null,
@@ -144,13 +142,21 @@ public class InMemoryTaskRepository extends TaskRepository {
     }
 
     @Override
-    public java.util.List<JobTask> findRetryableTasks(int limit) {
+    public List<JobTask> findRetryableTasks(int limit) {
         return store.values().stream()
                 .filter(t -> t.status() == TaskStatus.FAILED)
                 .filter(t -> t.nextAttemptTime() != null && !t.nextAttemptTime().isAfter(OffsetDateTime.now()))
-                .sorted(java.util.Comparator.comparingInt(JobTask::attemptCount)
+                .sorted(Comparator.comparingInt(JobTask::attemptCount)
                         .thenComparing(JobTask::nextAttemptTime))
                 .limit(limit)
+                .toList();
+    }
+
+    @Override
+    public List<JobTask> findDeadLetterByJobId(UUID jobId) {
+        return store.values().stream()
+                .filter(t -> t.jobId().equals(jobId))
+                .filter(t -> t.status() == TaskStatus.DEAD_LETTER)
                 .toList();
     }
 
@@ -160,7 +166,7 @@ public class InMemoryTaskRepository extends TaskRepository {
     public Collection<JobTask> all() { return Collections.unmodifiableCollection(store.values()); }
     public void clear() { store.clear(); }
 
-    private void update(UUID taskId, java.util.function.UnaryOperator<JobTask> fn) {
+    private void update(UUID taskId, UnaryOperator<JobTask> fn) {
         store.computeIfPresent(taskId, (k, v) -> fn.apply(v));
     }
 }
