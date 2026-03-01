@@ -51,7 +51,7 @@ asyncjob:
     
   # Lock configuration (Redisson)
   lock:
-    lease-time-ms: -1      # -1 = use watchdog (auto-extend)
+    lease-time-ms: 30000   # lock lease in ms (auto-renewed while processing)
     wait-time-ms: 0        # 0 = fail immediately if lock not available
     
   # Deadline guard sweep (marks stale tasks)

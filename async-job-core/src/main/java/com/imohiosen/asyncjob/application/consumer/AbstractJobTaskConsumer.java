@@ -52,7 +52,7 @@ import java.util.concurrent.CompletableFuture;
  * Exceptions are logged and swallowed to prevent killing the consumer thread.
  *
  * <p><strong>No forced timeout.</strong> The consumer waits indefinitely for the
- * handler to complete. The distributed lock is kept alive via the watchdog mechanism
+ * handler to complete. The distributed lock lease is automatically renewed
  * so the task stays locked no matter how long it takes. The final status (success
  * or failure) is always persisted.
  */
@@ -149,7 +149,7 @@ public abstract class AbstractJobTaskConsumer {
     private void doConsume(JobMessage message) throws Exception {
         UUID taskId = message.taskId();
 
-        // 1. Acquire distributed fenced lock — watchdog auto-renews while this thread is alive
+        // 1. Acquire distributed fenced lock — lease auto-renews while this thread is alive
         Optional<FencedLock> maybeLock = lockManager.tryLock(taskId);
         if (maybeLock.isEmpty()) {
             log.warn("Could not acquire lock for task={}, skipping (another node is processing)", taskId);
@@ -180,7 +180,7 @@ public abstract class AbstractJobTaskConsumer {
             log.debug("Task={} submitted to executor at {} (fence={}, timeCritical={})",
                     taskId, submittedAt, fenceToken, task.timeCritical());
 
-            // 5. Wait indefinitely — lock watchdog keeps us safe; no forced timeout
+            // 5. Wait indefinitely — lease auto-renewal keeps us safe; no forced timeout
             TaskResult result = future.get();
 
             // 6. Handle result — fence token ensures stale holders cannot overwrite
@@ -201,8 +201,8 @@ public abstract class AbstractJobTaskConsumer {
             // 7. Update complete
 
         } finally {
-            // Always release — watchdog stops on unlock; if JVM dies the watchdog
-            // stops renewing and the lock expires automatically
+            // Always release — renewal stops on unlock; if JVM dies the renewal
+            // stops and the lock lease expires automatically
             lockManager.unlock(taskId);
         }
     }

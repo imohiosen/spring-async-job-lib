@@ -77,7 +77,7 @@ public class AsyncJobLibraryAutoConfiguration {
 
     @Bean
     public LockProperties lockProperties(
-            @Value("${asyncjob.lock.lease-time-ms:-1}") long leaseTimeMs,
+            @Value("${asyncjob.lock.lease-time-ms:30000}") long leaseTimeMs,
             @Value("${asyncjob.lock.wait-time-ms:0}")   long waitTimeMs) {
         return new LockProperties(leaseTimeMs, waitTimeMs);
     }

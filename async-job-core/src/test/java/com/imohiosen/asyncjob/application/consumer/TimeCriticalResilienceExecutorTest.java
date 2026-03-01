@@ -10,6 +10,7 @@ import com.imohiosen.asyncjob.port.repository.TaskRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -17,6 +18,7 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -330,6 +332,154 @@ class TimeCriticalResilienceExecutorTest {
         // Periodic sync should NOT have written because attemptsSinceLastSync == 0
         verify(taskRepository, never()).persistTimeCriticalProgress(
                 any(), anyInt(), any(), anyString(), anyString(), anyLong());
+    }
+
+    // ── Null error branches ─────────────────────────────────────────────────
+
+    @Test
+    void execute_resultBasedExhaustionWithNullError_coversCauseNullBranch() {
+        // Handler returns TaskResult.failure(null) → tr.error() returns null
+        // Covers L109 (err != null → false), L124 (cause == null → true)
+        TimeCriticalPolicy policy = new TimeCriticalPolicy(2, 10L, 1.0, 50L, 60_000L);
+        JobTask task = buildTimeCriticalTask(taskId, jobId, 0, policy);
+        JobTaskHandler handler = new JobTaskHandler() {
+            @Override public String taskType() { return "TEST"; }
+            @Override public TaskResult handle(JobTask t) {
+                return TaskResult.failure(null);
+            }
+        };
+
+        when(taskRepository.persistTimeCriticalProgress(
+                any(), anyInt(), any(), anyString(), anyString(), anyLong()))
+                .thenReturn(true);
+
+        assertThatThrownBy(() -> executor.execute(task, fenceToken, handler))
+                .isInstanceOf(TimeCriticalRetriesExhaustedException.class)
+                .hasMessageContaining("Time-critical task failed after all retries");
+    }
+
+    @Test
+    void execute_singleAttemptException_lastErrorNull_usesExceptionAsRootCause() {
+        // maxAttempts=1 → handler throws on first call → onRetry never fires
+        // → lastError stays null → L134 (lastError.get() != null → false)
+        TimeCriticalPolicy policy = new TimeCriticalPolicy(1, 10L, 1.0, 50L, 60_000L);
+        JobTask task = buildTimeCriticalTask(taskId, jobId, 0, policy);
+        JobTaskHandler handler = new JobTaskHandler() {
+            @Override public String taskType() { return "TEST"; }
+            @Override public TaskResult handle(JobTask t) {
+                throw new RuntimeException("single attempt boom");
+            }
+        };
+
+        when(taskRepository.persistTimeCriticalProgress(
+                any(), anyInt(), any(), anyString(), anyString(), anyLong()))
+                .thenReturn(true);
+
+        assertThatThrownBy(() -> executor.execute(task, fenceToken, handler))
+                .isInstanceOf(TimeCriticalRetriesExhaustedException.class);
+    }
+
+    @Test
+    void execute_flushProgressWithNullError_coversNullTernaries() {
+        // Use mock scheduler to capture the periodic sync Runnable, then invoke
+        // it manually after result-based exhaustion with null error.
+        // Covers L160-161 (lastError == null in flushProgress ternaries).
+        ScheduledExecutorService mockScheduler = mock(ScheduledExecutorService.class);
+        @SuppressWarnings("unchecked")
+        ScheduledFuture<Object> mockFuture = mock(ScheduledFuture.class);
+        ArgumentCaptor<Runnable> captor = ArgumentCaptor.forClass(Runnable.class);
+        doReturn(mockFuture).when(mockScheduler)
+                .scheduleAtFixedRate(captor.capture(), anyLong(), anyLong(), any());
+
+        TimeCriticalResilienceExecutor mockExec =
+                new TimeCriticalResilienceExecutor(taskRepository, mockScheduler);
+
+        TimeCriticalPolicy policy = new TimeCriticalPolicy(2, 10L, 1.0, 50L, 100L);
+        JobTask task = buildTimeCriticalTask(taskId, jobId, 0, policy);
+        JobTaskHandler handler = new JobTaskHandler() {
+            @Override public String taskType() { return "TEST"; }
+            @Override public TaskResult handle(JobTask t) {
+                return TaskResult.failure(null);
+            }
+        };
+
+        when(taskRepository.persistTimeCriticalProgress(
+                any(), anyInt(), any(), anyString(), anyString(), anyLong()))
+                .thenReturn(true);
+
+        assertThatThrownBy(() -> mockExec.execute(task, fenceToken, handler))
+                .isInstanceOf(TimeCriticalRetriesExhaustedException.class);
+
+        // Invoke the captured periodic sync — lastError.get() is still null,
+        // attemptsSinceLastSync > 0, so flushProgress runs with null Throwable
+        captor.getValue().run();
+
+        verify(taskRepository).persistTimeCriticalProgress(
+                eq(taskId), anyInt(), any(), eq("Unknown error"), eq("Unknown"), eq(fenceToken));
+    }
+
+    // ── Flush exception branches (line coverage) ─────────────────────────────
+
+    @Test
+    void execute_flushFinalProgressException_doesNotPreventExceptionPropagation() {
+        // persistTimeCriticalProgress throws during final flush → catch at L188-190
+        TimeCriticalPolicy policy = new TimeCriticalPolicy(1, 10L, 1.0, 50L, 60_000L);
+        JobTask task = buildTimeCriticalTask(taskId, jobId, 0, policy);
+        JobTaskHandler handler = new JobTaskHandler() {
+            @Override public String taskType() { return "TEST"; }
+            @Override public TaskResult handle(JobTask t) {
+                throw new RuntimeException("boom");
+            }
+        };
+
+        when(taskRepository.persistTimeCriticalProgress(
+                any(), anyInt(), any(), anyString(), anyString(), anyLong()))
+                .thenThrow(new RuntimeException("DB down"));
+
+        assertThatThrownBy(() -> executor.execute(task, fenceToken, handler))
+                .isInstanceOf(TimeCriticalRetriesExhaustedException.class);
+    }
+
+    @Test
+    void execute_flushProgressException_doesNotCrashSync() {
+        // persistTimeCriticalProgress throws during periodic sync → catch at L174-176
+        ScheduledExecutorService mockScheduler = mock(ScheduledExecutorService.class);
+        @SuppressWarnings("unchecked")
+        ScheduledFuture<Object> mockFuture = mock(ScheduledFuture.class);
+        ArgumentCaptor<Runnable> captor = ArgumentCaptor.forClass(Runnable.class);
+        doReturn(mockFuture).when(mockScheduler)
+                .scheduleAtFixedRate(captor.capture(), anyLong(), anyLong(), any());
+
+        TimeCriticalResilienceExecutor mockExec =
+                new TimeCriticalResilienceExecutor(taskRepository, mockScheduler);
+
+        TimeCriticalPolicy policy = new TimeCriticalPolicy(2, 10L, 1.0, 50L, 100L);
+        JobTask task = buildTimeCriticalTask(taskId, jobId, 0, policy);
+        AtomicInteger callCount = new AtomicInteger(0);
+        JobTaskHandler handler = new JobTaskHandler() {
+            @Override public String taskType() { return "TEST"; }
+            @Override public TaskResult handle(JobTask t) {
+                if (callCount.getAndIncrement() < 1) {
+                    throw new RuntimeException("transient");
+                }
+                return TaskResult.success("{}");
+            }
+        };
+
+        // Make the sync throw
+        when(taskRepository.persistTimeCriticalProgress(
+                any(), anyInt(), any(), anyString(), anyString(), anyLong()))
+                .thenThrow(new RuntimeException("DB unavailable"));
+
+        TaskResult result = mockExec.execute(task, fenceToken, handler);
+        assertThat(result.isSuccess()).isTrue();
+
+        // Now invoke the captured sync Runnable — it should catch the exception
+        captor.getValue().run();
+
+        // Verify it was attempted
+        verify(taskRepository, atLeastOnce()).persistTimeCriticalProgress(
+                eq(taskId), anyInt(), any(), anyString(), anyString(), eq(fenceToken));
     }
 
     // ── Original Helpers ─────────────────────────────────────────────────────
