@@ -186,12 +186,22 @@ public class DispatchingJobTaskConsumer extends AbstractJobTaskConsumer {
                 .map(handler -> {
                     ExecutorService exec = selectExecutor(task, handler);
                     if (exec != null) {
-                        return CompletableFuture.supplyAsync(
-                                () -> timeCriticalExecutor.execute(task, fenceToken, handler), exec);
+                        return CompletableFuture.supplyAsync(() -> {
+                            try {
+                                return timeCriticalExecutor.execute(task, fenceToken, handler);
+                            } catch (Exception e) {
+                                return TaskResult.failure(e);
+                            }
+                        }, exec);
                     }
                     // Use the shared bridge executor
-                    return CompletableFuture.supplyAsync(
-                            () -> timeCriticalExecutor.execute(task, fenceToken, handler));
+                    return CompletableFuture.supplyAsync(() -> {
+                        try {
+                            return timeCriticalExecutor.execute(task, fenceToken, handler);
+                        } catch (Exception e) {
+                            return TaskResult.failure(e);
+                        }
+                    });
                 })
                 .orElseGet(() -> {
                     log.warn("No handler for task type={} — falling back to normal submit",
