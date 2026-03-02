@@ -38,10 +38,10 @@ class DataExportHandlerTest {
         TaskResult result = handler.handle(task);
 
         // Then
-        assertThat(result.success()).isTrue();
-        assertThat(result.data()).contains("exported");
-        assertThat(result.data()).contains("CSV");
-        assertThat(result.data()).contains("1000");
+        assertThat(result.isSuccess()).isTrue();
+        assertThat(result.payload()).contains("exported");
+        assertThat(result.payload()).contains("CSV");
+        assertThat(result.payload()).contains("1000");
     }
 
     @Test
@@ -54,9 +54,9 @@ class DataExportHandlerTest {
         TaskResult result = handler.handle(task);
 
         // Then
-        assertThat(result.success()).isTrue();
-        assertThat(result.data()).contains("JSON");
-        assertThat(result.data()).contains("url");
+        assertThat(result.isSuccess()).isTrue();
+        assertThat(result.payload()).contains("JSON");
+        assertThat(result.payload()).contains("url");
     }
 
     @Test
@@ -69,8 +69,8 @@ class DataExportHandlerTest {
         TaskResult result = handler.handle(task);
 
         // Then
-        assertThat(result.success()).isTrue();
-        assertThat(result.data()).contains("50000");
+        assertThat(result.isSuccess()).isTrue();
+        assertThat(result.payload()).contains("50000");
     }
 
     private JobTask createTask(String taskType, String payload, int attemptCount) {

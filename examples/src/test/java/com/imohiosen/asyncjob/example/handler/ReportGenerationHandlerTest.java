@@ -48,10 +48,10 @@ class ReportGenerationHandlerTest {
         TaskResult result = handler.handle(task);
 
         // Then
-        assertThat(result.success()).isTrue();
-        assertThat(result.data()).contains("generated");
-        assertThat(result.data()).contains("SALES");
-        assertThat(result.data()).contains("url");
+        assertThat(result.isSuccess()).isTrue();
+        assertThat(result.payload()).contains("generated");
+        assertThat(result.payload()).contains("SALES");
+        assertThat(result.payload()).contains("url");
     }
 
     @Test
@@ -64,9 +64,9 @@ class ReportGenerationHandlerTest {
         TaskResult result = handler.handle(task);
 
         // Then
-        assertThat(result.success()).isTrue();
-        assertThat(result.data()).contains("reportType\":\"INVENTORY\"");
-        assertThat(result.data()).contains("pages");
+        assertThat(result.isSuccess()).isTrue();
+        assertThat(result.payload()).contains("reportType\":\"INVENTORY\"");
+        assertThat(result.payload()).contains("pages");
     }
 
     private JobTask createTask(String taskType, String payload, int attemptCount) {

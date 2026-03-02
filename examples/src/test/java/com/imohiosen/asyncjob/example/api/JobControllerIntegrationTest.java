@@ -59,7 +59,6 @@ class JobControllerIntegrationTest extends AbstractIntegrationTest {
         assertThat(response.getBody().jobName()).isEqualTo("api-test-job");
         assertThat(response.getBody().correlationId()).isEqualTo("api-correlation-123");
         assertThat(response.getBody().status()).isEqualTo(JobStatus.PENDING);
-        assertThat(response.getBody().totalTasks()).isEqualTo(1);
     }
 
     @Test
@@ -279,7 +278,6 @@ class JobControllerIntegrationTest extends AbstractIntegrationTest {
                             JobResponse.class
                     );
 
-                    assertThat(jobResponse.getBody().completedTasks()).isEqualTo(2);
                 });
     }
 

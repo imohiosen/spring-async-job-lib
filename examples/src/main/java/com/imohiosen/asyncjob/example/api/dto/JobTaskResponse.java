@@ -27,8 +27,7 @@ public record JobTaskResponse(
         String lastErrorMessage,
         String lastErrorClass,
         String payload,
-        String result,
-        String metadata
+        String result
 ) {
     public static JobTaskResponse fromTask(JobTask task) {
         return new JobTaskResponse(
@@ -49,8 +48,7 @@ public record JobTaskResponse(
                 task.lastErrorMessage(),
                 task.lastErrorClass(),
                 task.payload(),
-                task.result(),
-                task.metadata()
+                task.result()
         );
     }
 }

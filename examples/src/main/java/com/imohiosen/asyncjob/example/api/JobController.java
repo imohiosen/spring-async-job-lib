@@ -54,56 +54,39 @@ public class JobController {
         log.info("Creating job: name={} taskCount={}", request.jobName(), request.tasks().size());
 
         try {
-            // Create Job
-            Job job = new Job(
-                    UUID.randomUUID(),
-                    request.jobName(),
-                    request.correlationId(),
-                    com.imohiosen.asyncjob.domain.JobStatus.PENDING,
-                    OffsetDateTime.now(),
-                    OffsetDateTime.now(),
-                    null,
-                    null,
-                    OffsetDateTime.now().plusHours(request.deadlineHours()),
-                    null,
-                    false,
-                    request.tasks().size(),
-                    request.tasks().size(),
-                    0, 0, 0, 0,
-                    request.metadata(),
-                    false
-            );
-
-            // Create tasks
-            List<JobTask> tasks = request.tasks().stream()
-                    .map(taskReq -> new JobTask(
-                            UUID.randomUUID(),
-                            job.id(),
-                            taskReq.taskType(),
-                            kafkaTopic,
-                            null, null,
-                            com.imohiosen.asyncjob.domain.TaskStatus.PENDING,
-                            OffsetDateTime.now(),
-                            OffsetDateTime.now(),
-                            null, null,
-                            OffsetDateTime.now().plusHours(request.deadlineHours()),
-                            false,
-                            0, null, null,
-                            taskReq.backoffBaseMs(),
-                            taskReq.backoffMultiplier(),
-                            taskReq.backoffMaxMs(),
-                            null, null,
-                            null, null, null,
-                            taskReq.payload(),
-                            null,
-                            false, 0, 0L, 1.0, 0L, 0L
-                    ))
+            CreateJobRequest.TaskRequest firstTask = request.tasks().get(0);
+            
+            List<String> payloads = request.tasks().stream()
+                    .map(CreateJobRequest.TaskRequest::payload)
                     .collect(Collectors.toList());
 
-            // Submit job and tasks
-            submissionService.submit(job, tasks);
+            long deadlineMs = (long) request.deadlineHours() * 3600 * 1000;
+            
+            com.imohiosen.asyncjob.domain.BackoffPolicy backoffPolicy = new com.imohiosen.asyncjob.domain.BackoffPolicy(
+                    firstTask.backoffBaseMs(),
+                    firstTask.backoffMultiplier(),
+                    firstTask.backoffMaxMs()
+            );
 
-            log.info("Successfully created job: id={} taskCount={}", job.id(), tasks.size());
+            com.imohiosen.asyncjob.domain.JobSubmissionRequest submissionRequest = new com.imohiosen.asyncjob.domain.JobSubmissionRequest(
+                    request.jobName(),
+                    kafkaTopic,
+                    firstTask.taskType(), // Assume homogenous tasks for the job
+                    payloads,
+                    deadlineMs,
+                    null,
+                    backoffPolicy,
+                    null,
+                    request.correlationId(),
+                    request.metadata(),
+                    false,
+                    null
+            );
+
+            UUID jobId = submissionService.submit(submissionRequest);
+            Job job = jobRepository.findById(jobId).orElseThrow(() -> new IllegalStateException("Job not found after submission: " + jobId));
+
+            log.info("Successfully created job: id={} taskCount={}", job.id(), payloads.size());
 
             return ResponseEntity.status(HttpStatus.CREATED)
                     .body(JobResponse.fromJob(job));
@@ -130,7 +113,7 @@ public class JobController {
      */
     @GetMapping("/{jobId}/tasks")
     public ResponseEntity<List<JobTaskResponse>> getJobTasks(@PathVariable UUID jobId) {
-        List<JobTask> tasks = taskRepository.findByJobId(jobId);
+        List<JobTask> tasks = taskRepository.findTasksByJobId(jobId);
         List<JobTaskResponse> response = tasks.stream()
                 .map(JobTaskResponse::fromTask)
                 .collect(Collectors.toList());

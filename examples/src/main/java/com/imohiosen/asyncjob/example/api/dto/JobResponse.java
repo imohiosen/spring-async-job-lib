@@ -20,12 +20,6 @@ public record JobResponse(
         OffsetDateTime completedAt,
         OffsetDateTime deadlineAt,
         boolean stale,
-        int totalTasks,
-        int pendingTasks,
-        int inProgressTasks,
-        int completedTasks,
-        int failedTasks,
-        int deadLetterTasks,
         String metadata
 ) {
     public static JobResponse fromJob(Job job) {
@@ -40,12 +34,6 @@ public record JobResponse(
                 job.completedAt(),
                 job.deadlineAt(),
                 job.stale(),
-                job.totalTasks(),
-                job.pendingTasks(),
-                job.inProgressTasks(),
-                job.completedTasks(),
-                job.failedTasks(),
-                job.deadLetterTasks(),
                 job.metadata()
         );
     }

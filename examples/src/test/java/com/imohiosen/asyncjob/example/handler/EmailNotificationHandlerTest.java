@@ -38,9 +38,9 @@ class EmailNotificationHandlerTest {
         TaskResult result = handler.handle(task);
 
         // Then
-        assertThat(result.success()).isTrue();
-        assertThat(result.data()).contains("sent");
-        assertThat(result.data()).contains("test@example.com");
+        assertThat(result.isSuccess()).isTrue();
+        assertThat(result.payload()).contains("sent");
+        assertThat(result.payload()).contains("test@example.com");
     }
 
     @Test
@@ -53,7 +53,7 @@ class EmailNotificationHandlerTest {
         TaskResult result = handler.handle(task);
 
         // Then
-        assertThat(result.success()).isTrue();
+        assertThat(result.isSuccess()).isTrue();
     }
 
     @Test
@@ -66,7 +66,7 @@ class EmailNotificationHandlerTest {
         TaskResult result = handler.handle(task);
 
         // Then
-        assertThat(result.success()).isFalse();
+        assertThat(result.isSuccess()).isFalse();
         assertThat(result.error()).isNotNull();
     }
 
