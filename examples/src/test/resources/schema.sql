@@ -1,8 +1,14 @@
--- Test database schema (copy of main schema for Testcontainers init)
+-- =============================================================================
+-- Async Job Library — PostgreSQL Schema
+-- com.imohiosen / spring-async-job-lib
+-- =============================================================================
 
 CREATE TYPE job_status  AS ENUM ('SCHEDULED','PENDING','IN_PROGRESS','COMPLETED','FAILED','DEAD_LETTER');
 CREATE TYPE task_status AS ENUM ('PENDING','IN_PROGRESS','COMPLETED','FAILED','DEAD_LETTER');
 
+-- ---------------------------------------------------------------------------
+-- JOBS — one row per scheduled trigger execution
+-- ---------------------------------------------------------------------------
 CREATE TABLE jobs (
     id                  VARCHAR(36)     PRIMARY KEY,
     job_name            VARCHAR(255)    NOT NULL,
@@ -15,9 +21,13 @@ CREATE TABLE jobs (
     deadline_at         TIMESTAMPTZ     NOT NULL,
     scheduled_at        TIMESTAMPTZ,
     stale               BOOLEAN         NOT NULL DEFAULT FALSE,
-    metadata            JSONB
+    metadata            JSONB,
+    time_critical       BOOLEAN         NOT NULL DEFAULT FALSE
 );
 
+-- ---------------------------------------------------------------------------
+-- JOB_TASKS — one row per message / unit of work
+-- ---------------------------------------------------------------------------
 CREATE TABLE job_tasks (
     id                  VARCHAR(36)     PRIMARY KEY,
     job_id              VARCHAR(36)     NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
@@ -45,9 +55,18 @@ CREATE TABLE job_tasks (
     fence_token         BIGINT,
     payload             JSONB           NOT NULL,
     result              JSONB,
-    metadata            JSONB
+    metadata            JSONB,
+    time_critical       BOOLEAN         NOT NULL DEFAULT FALSE,
+    tc_max_attempts     INT,
+    tc_base_interval_ms BIGINT,
+    tc_multiplier       NUMERIC(10, 4),
+    tc_max_delay_ms     BIGINT,
+    tc_db_sync_interval_ms BIGINT
 );
 
+-- ---------------------------------------------------------------------------
+-- SHEDLOCK — required by ShedLock for distributed scheduling
+-- ---------------------------------------------------------------------------
 CREATE TABLE shedlock (
     name       VARCHAR(64)  NOT NULL,
     lock_until TIMESTAMPTZ  NOT NULL,
@@ -56,6 +75,9 @@ CREATE TABLE shedlock (
     PRIMARY KEY (name)
 );
 
+-- ---------------------------------------------------------------------------
+-- INDEXES
+-- ---------------------------------------------------------------------------
 CREATE INDEX idx_jobs_stale_deadline
     ON jobs (deadline_at)
     WHERE stale = FALSE AND status NOT IN ('SCHEDULED', 'COMPLETED', 'DEAD_LETTER');
@@ -83,6 +105,9 @@ CREATE INDEX idx_job_tasks_dead_letter
     ON job_tasks (job_id, updated_at DESC)
     WHERE status = 'DEAD_LETTER';
 
+-- ---------------------------------------------------------------------------
+-- TRIGGERS — auto-maintain updated_at
+-- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION set_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -99,6 +124,9 @@ CREATE TRIGGER trg_job_tasks_updated_at
     BEFORE UPDATE ON job_tasks
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
+-- ---------------------------------------------------------------------------
+-- BACKOFF HELPER FUNCTION
+-- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION compute_next_attempt_time(
     p_base_interval_ms  BIGINT,
     p_multiplier        NUMERIC,

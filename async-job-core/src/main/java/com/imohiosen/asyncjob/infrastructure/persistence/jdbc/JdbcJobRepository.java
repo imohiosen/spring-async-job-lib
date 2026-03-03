@@ -31,7 +31,7 @@ public class JdbcJobRepository implements JobRepository {
                 INSERT INTO jobs (id, job_name, correlation_id, status, created_at, updated_at,
                                   deadline_at, scheduled_at, stale, metadata,
                                   time_critical)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?)
+                VALUES (?, ?, ?, ?::job_status, ?, ?, ?, ?, ?, ?::jsonb, ?)
                 """;
         try (Connection conn = dataSource.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
@@ -71,7 +71,7 @@ public class JdbcJobRepository implements JobRepository {
 
     @Override
     public void updateStatus(UUID id, JobStatus status) {
-        String sql = "UPDATE jobs SET status = ?, updated_at = NOW() WHERE id = ?";
+        String sql = "UPDATE jobs SET status = ?::job_status, updated_at = NOW() WHERE id = ?";
         try (Connection conn = dataSource.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, status.name());

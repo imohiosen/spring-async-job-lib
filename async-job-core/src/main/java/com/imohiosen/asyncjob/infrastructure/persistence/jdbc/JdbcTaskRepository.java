@@ -33,7 +33,7 @@ public class JdbcTaskRepository implements TaskRepository {
                     attempt_count, base_interval_ms, multiplier, max_delay_ms, payload,
                     time_critical, tc_max_attempts, tc_base_interval_ms, tc_multiplier,
                     tc_max_delay_ms, tc_db_sync_interval_ms)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?::task_status, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?, ?, ?, ?, ?)
                 """;
         try (Connection conn = dataSource.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
